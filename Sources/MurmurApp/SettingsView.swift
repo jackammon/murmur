@@ -797,8 +797,8 @@ private struct GeneralPane: View {
 
 // MARK: - Shortcut
 
-/// Three preview tiles for the stripe style, each showing a working wave in
-/// that style.
+/// Three preview tiles for the stripe style, each showing the still mark in
+/// that style (static, so Settings doesn't redraw continuously).
 private struct StripeStylePicker: View {
     @AppStorage(StripeStyle.defaultsKey) private var style: StripeStyle = .color
 
@@ -809,8 +809,9 @@ private struct StripeStylePicker: View {
                     style = option
                 } label: {
                     VStack(spacing: 6) {
-                        StripeWave(motion: .working, ink: option.usesPalette ? .palette : .foreground)
-                            .frame(width: 58, height: 24)
+                        StripeWave(motion: .resting, ink: option.usesPalette ? .palette : .foreground,
+                                   animated: false)
+                            .frame(width: 58, height: 26)
                             .foregroundStyle(option.hasDarkSurface ? Color.white : Color.black)
                             .frame(width: 96, height: 48)
                             .background(

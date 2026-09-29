@@ -87,13 +87,19 @@ final class RecordingOverlay {
         self.hostingView = host
     }
 
-    /// The panel is created at one size; an error pill is bigger, so match the
-    /// window to the SwiftUI frame before showing it or the content clips.
+    /// The panel is created at one size; the Overlay card and error pill are
+    /// bigger, so match the window to the SwiftUI frame before showing it or
+    /// the content clips. Keeps the top edge and horizontal centre in place so
+    /// the HUD doesn't drift when, say, the Overlay card becomes a capsule.
     private func resizePanel(for phase: AppState.Phase) {
         guard let panel else { return }
         let size = OverlayPill.size(for: phase, mode: state.activeDictationMode)
         guard panel.frame.size != size else { return }
-        panel.setContentSize(size)
+        let old = panel.frame
+        panel.setFrame(NSRect(x: (old.midX - size.width / 2).rounded(),
+                              y: old.maxY - size.height,
+                              width: size.width, height: size.height),
+                       display: panel.isVisible)
         hostingView?.frame = NSRect(origin: .zero, size: size)
     }
 

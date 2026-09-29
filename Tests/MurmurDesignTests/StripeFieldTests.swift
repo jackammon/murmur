@@ -5,7 +5,7 @@ final class StripeFieldTests: XCTestCase {
     func testFieldForcesOddColumnsAndEvenRows() {
         let field = StripeField(columns: 8, rows: 15)
         XCTAssertEqual(field.columns, 7)
-        XCTAssertEqual(field.rows, 16)
+        XCTAssertEqual(field.rows, 14)
         XCTAssertEqual(StripeField(columns: 0, rows: 0).columns, 1)
         XCTAssertEqual(StripeField(columns: 0, rows: 0).rows, 2)
     }
@@ -181,6 +181,10 @@ final class StripeLayoutTests: XCTestCase {
         let odd = StripeLayout.fitted(width: 45, height: 25, bar: 2, gap: 2, cell: 2)
         XCTAssertEqual(odd.originX, odd.originX.rounded())
         XCTAssertEqual(odd.originY, odd.originY.rounded())
+        // 26 pt at 2 pt rows is 13 rows; rounding down keeps the field inside.
+        let tile = StripeLayout.fitted(width: 58, height: 26, bar: 2, gap: 2, cell: 2)
+        XCTAssertEqual(tile.field.rows, 12)
+        XCTAssertGreaterThanOrEqual(tile.originY, 0)
     }
 
     func testProportionalLayoutFillsTheWidth() {

@@ -28,12 +28,13 @@ public struct StripeField: Equatable, Sendable {
     public let rows: Int
 
     /// `columns` is forced odd so the field has a centre column; `rows` is
-    /// forced even so every column centres on the same line.
+    /// forced even so every column centres on the same line. Both round down
+    /// so a fitted field never overflows its frame.
     public init(columns: Int, rows: Int) {
         let c = max(1, columns)
         self.columns = c % 2 == 0 ? c - 1 : c
         let r = max(2, rows)
-        self.rows = r % 2 == 0 ? r : r + 1
+        self.rows = r % 2 == 0 ? r : r - 1
     }
 
     /// Distance of `column` from the centre, 0 at the centre and 1 at the edges.
