@@ -1,27 +1,22 @@
 import SwiftUI
 import AppKit
 
-/// Design tokens + reusable SwiftUI components that give every surface a
-/// consistent voice. The critique that motivated this file said it best:
-/// "every design 'doesn't' traces back to no shared tokens." This file is
-/// the spine.
+/// Design tokens and shared SwiftUI components.
+///
+/// Murmur follows the system: system fonts, semantic colours that adapt to
+/// light and dark appearances, and native controls where they exist. Brand
+/// character lives in one place, the stripe field (`Stripes.swift`), which
+/// draws the menu-bar glyph, the listening HUD, and the brand mark.
 
 enum Theme {
-    // MARK: - Palette (light-leaning; dark mode keeps system defaults)
+    // MARK: - Status colours (system colours adapt to appearance and contrast)
 
-    /// Warm cream — used as background on "reception" surfaces (onboarding,
-    /// About). Not a global app background; keep system materials elsewhere.
-    static let cream       = Color(red: 0.961, green: 0.949, blue: 0.925)  // #F5F2EC
-    static let creamRaised = Color(red: 0.910, green: 0.875, blue: 0.788)  // #E8DFC9
-    static let ink         = Color(red: 0.169, green: 0.153, blue: 0.133)  // #2B2722
-
-    /// Status palette. Muted, native-feeling — not the system rainbow.
-    static let coral       = Color(red: 0.792, green: 0.337, blue: 0.290)  // #CA564A — recording
-    static let amber       = Color(red: 0.851, green: 0.671, blue: 0.290)  // #D9AB4A — warming / transcribing
-    static let moss        = Color(red: 0.349, green: 0.518, blue: 0.318)  // #59844F — idle / ready / success
+    static let success = Color(nsColor: .systemGreen)
+    static let caution = Color(nsColor: .systemOrange)
+    static let alert   = Color(nsColor: .systemRed)
 
     /// 1 pt card stroke — works in both light and dark mode.
-    static let hairline    = Color.primary.opacity(0.08)
+    static let hairline = Color.primary.opacity(0.08)
 
     // MARK: - Spacing scale
 
@@ -34,70 +29,40 @@ enum Theme {
 
     // MARK: - Corner radius scale
 
-    /// Inline pills: status badges, small chips.
-    static let rInline:   CGFloat = 8
-    /// Cards: banners, transcript card, settings rows, privacy rows.
-    static let rCard:     CGFloat = 12
-    /// Floating chrome: overlay pill, popover edges (where exposed).
-    static let rFloating: CGFloat = 16
+    /// Inline pills: status badges, small chips, buttons.
+    static let rInline:   CGFloat = 6
+    /// Cards: banners, transcript card, settings rows.
+    static let rCard:     CGFloat = 10
+    /// Floating chrome: the overlay card.
+    static let rFloating: CGFloat = 18
 }
 
 // MARK: - Typography roles
 
 extension Font {
     /// Onboarding welcome only.
-    static let murmurHeroSerif  = Font.system(size: 34, weight: .regular, design: .serif)
+    static let murmurHero     = Font.system(size: 26, weight: .semibold)
     /// Onboarding step titles, About title.
-    static let murmurTitleSerif = Font.system(size: 28, weight: .regular, design: .serif)
-    /// Tagline italic on About.
-    static let murmurTaglineSerif = Font.system(size: 15, design: .serif).italic()
-    /// Popover header, overlay headline, settings group titles.
-    static let murmurHeadline   = Font.system(size: 14, weight: .medium)
+    static let murmurTitle    = Font.system(size: 20, weight: .semibold)
+    /// Tagline under the About and welcome titles.
+    static let murmurTagline  = Font.system(size: 13)
+    /// Overlay headline, settings group titles.
+    static let murmurHeadline = Font.system(size: 13, weight: .semibold)
 }
 
 // MARK: - SectionHeader
 
-/// Small-caps section label. The unifying typographic motif across every
-/// surface. Use above any logical group of content.
+/// Group label in the style of System Settings. Use above any logical group
+/// of content.
 struct SectionHeader: View {
     let label: String
     init(_ label: String) { self.label = label }
 
     var body: some View {
         Text(label)
-            .font(.caption2.weight(.semibold))
-            .tracking(1.4)
-            .textCase(.uppercase)
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
-    }
-}
-
-// MARK: - StatusDot
-
-/// 8 pt circle with a 1.5 pt hairline stroke (so it holds shape on translucent
-/// menu-bar materials). Colour is derived from the phase via the Theme palette.
-struct StatusDot: View {
-    let phase: AppState.Phase
-    var size: CGFloat = 8
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .overlay(
-                Circle()
-                    .stroke(Color.black.opacity(0.08), lineWidth: 1.5)
-            )
-    }
-
-    private var color: Color {
-        switch phase {
-        case .warming:                 return Theme.amber
-        case .idle, .ready:            return Theme.moss
-        case .starting, .recording:    return Theme.coral
-        case .transcribing, .polishing: return Theme.amber
-        case .error:                   return .secondary
-        }
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -128,7 +93,7 @@ struct PlaceholderTextEditor: View {
                 .padding(8)
         }
         .frame(minHeight: minHeight, idealHeight: idealHeight ?? minHeight)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.rCard)
                 .stroke(Theme.hairline, lineWidth: 1)
@@ -140,77 +105,45 @@ struct PlaceholderTextEditor: View {
 // MARK: - Card modifier
 
 extension View {
-    /// Standard card: subtle fill + 1 pt hairline stroke + 12 pt radius +
+    /// Standard card: subtle fill + 1 pt hairline stroke + rounded corners +
     /// internal padding. Used for transcript cards, banners, privacy rows.
     func murmurCard(padding: CGFloat = Theme.s12) -> some View {
         self
             .padding(padding)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .background(Color.primary.opacity(0.04))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.rCard)
+                RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
                     .stroke(Theme.hairline, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
-    }
-
-    /// Soft cream card for use on cream backgrounds (onboarding privacy rows).
-    /// White-over-cream gives a subtle but real lift.
-    func murmurCardOnCream(padding: CGFloat = Theme.s12) -> some View {
-        self
-            .padding(padding)
-            .background(Color.white.opacity(0.6))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.rCard)
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
     }
 }
 
 // MARK: - Tinted banner modifier
 
-/// Soft-fill + same-hue stroke banner. Standardises the update / accessibility
-/// banner pattern in the popover so they read as objects, not glows.
+/// Soft-fill + same-hue stroke banner for notices in Settings.
 extension View {
     func murmurBanner(tint: Color, padding: CGFloat = Theme.s12) -> some View {
         self
             .padding(padding)
             .background(tint.opacity(0.10))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.rCard)
+                RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
                     .stroke(tint.opacity(0.20), lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard))
-    }
-}
-
-// MARK: - Cream surface background
-
-/// Wrap a Settings pane's `Form` in cream, matching About. The form's own
-/// scrolled background is hidden so cards float on the warm surface
-/// instead of the default system grey.
-extension View {
-    func creamSettingsBackground() -> some View {
-        ZStack {
-            CreamSurface().ignoresSafeArea()
-            self.scrollContentBackground(.hidden)
-        }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
     }
 }
 
 // MARK: - Buttons
 
-/// Design-system button, three variants:
+/// Design-system button, three variants. Monochrome so it sits with the
+/// stripe mark, and adaptive so it reads in light and dark mode.
 ///
-/// - `.neutral`     — paper-white fill, hairline edge. Default ask, like
-///                    "Export" or any reversible action.
-/// - `.primary`     — deep ink fill, cream-on-ink. The page's main CTA.
-///                    Used sparingly — one per surface at most.
-/// - `.destructive` — coral fill, white type. Anything irreversible
-///                    (Reset stats, Delete all history).
-///
-/// Designed for cream surfaces. Reads on macOS materials too thanks to
-/// the hairline + alpha-tinted fills.
+/// - `.neutral`     — quiet tinted fill. Default ask, like "Export".
+/// - `.primary`     — solid label-colour fill (black in light mode, white in
+///                    dark). The page's main CTA; one per surface at most.
+/// - `.destructive` — red fill. Anything irreversible.
 struct MurmurButtonStyle: ButtonStyle {
     enum Variant { case neutral, primary, destructive }
     var variant: Variant = .neutral
@@ -221,20 +154,17 @@ struct MurmurButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
+        let shape = RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous)
         configuration.label
             .font(font)
             .padding(.horizontal, hPad)
             .padding(.vertical, vPad)
             .frame(minHeight: minHeight)
-            .background(background(pressed: pressed))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous)
-                    .strokeBorder(strokeColor, lineWidth: 1)
-            )
+            .background(background(pressed: pressed), in: shape)
+            .overlay(shape.strokeBorder(strokeColor, lineWidth: 1))
             .foregroundStyle(textColor)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous))
             .opacity(enabled ? 1.0 : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous))
+            .contentShape(shape)
             .animation(.easeOut(duration: 0.08), value: pressed)
     }
 
@@ -242,41 +172,30 @@ struct MurmurButtonStyle: ButtonStyle {
         size == .small ? .caption.weight(.medium) : .callout.weight(.medium)
     }
     private var hPad: CGFloat { size == .small ? Theme.s8 : Theme.s12 }
-    private var vPad: CGFloat { size == .small ? 4 : 6 }
+    private var vPad: CGFloat { size == .small ? 3 : 5 }
     private var minHeight: CGFloat { size == .small ? 22 : 28 }
 
-    @ViewBuilder
-    private func background(pressed: Bool) -> some View {
+    private func background(pressed: Bool) -> Color {
         switch variant {
-        case .neutral:
-            (pressed ? Color.white.opacity(0.45) : Color.white.opacity(0.7))
-        case .primary:
-            ZStack {
-                Theme.ink
-                LinearGradient(
-                    colors: [Color.white.opacity(0.10), Color.clear],
-                    startPoint: .top, endPoint: .bottom
-                )
-            }
-            .opacity(pressed ? 0.85 : 1.0)
-        case .destructive:
-            Theme.coral.opacity(pressed ? 0.80 : 0.92)
+        case .neutral:     return Color.primary.opacity(pressed ? 0.14 : 0.07)
+        case .primary:     return Color.primary.opacity(pressed ? 0.75 : 0.9)
+        case .destructive: return Theme.alert.opacity(pressed ? 0.8 : 0.92)
         }
     }
 
     private var strokeColor: Color {
         switch variant {
-        case .neutral:     return Color.black.opacity(0.10)
-        case .primary:     return Color.black.opacity(0.45)
-        case .destructive: return Theme.coral.opacity(0.55)
+        case .neutral:     return Color.primary.opacity(0.08)
+        case .primary:     return .clear
+        case .destructive: return .clear
         }
     }
 
     private var textColor: Color {
         switch variant {
-        case .neutral:     return Theme.ink
-        case .primary:     return Color.white
-        case .destructive: return Color.white
+        case .neutral:     return .primary
+        case .primary:     return Color(nsColor: .windowBackgroundColor)
+        case .destructive: return .white
         }
     }
 }
@@ -290,94 +209,25 @@ extension ButtonStyle where Self == MurmurButtonStyle {
     static var murmurDestructiveSmall: MurmurButtonStyle { MurmurButtonStyle(variant: .destructive, size: .small) }
 }
 
-/// Drop in as the topmost layer of a "reception" surface (onboarding, About).
-/// Honours dark mode by deferring to the visual-effect view there.
-struct CreamSurface: View {
-    @Environment(\.colorScheme) private var scheme
-    var body: some View {
-        if scheme == .dark {
-            VisualEffect(material: .underWindowBackground, blending: .behindWindow)
-        } else {
-            ZStack {
-                VisualEffect(material: .underWindowBackground, blending: .behindWindow)
-                    .opacity(0.4)
-                Theme.cream
-            }
-        }
-    }
-}
+// MARK: - Visual effect
 
-// MARK: - Brand mark
-
-/// Pond-blue line-art duck-in-pond mark for use on cream and neutral
-/// surfaces. Source artwork: Murmur design system, row-5 idle variant
-/// (`duck-in-pond.png` + @2x). macOS-native chrome (the menu-bar status
-/// item) uses the silhouette template icons in `Resources/MenuIcons/`
-/// instead — those are tiny phase glyphs, not a brand mark.
-struct DuckMark: View {
-    var size: CGFloat
-    var body: some View {
-        if let nsImage = Self.markImage {
-            Image(nsImage: nsImage)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: size, height: size)
-                .accessibilityLabel("Murmur")
-        } else {
-            // Fallback if the resource bundle is missing — keeps layouts stable.
-            Text("🦆").font(.system(size: size * 0.85))
-        }
-    }
-
-    private static let markImage: NSImage? = loadBrandMark(named: "duck-in-pond")
-}
-
-/// Quacking duck — head + open beak + sound waves, pond-blue line-art.
-/// Used on the menu-bar popover header where "speak / listen" reads
-/// stronger than the at-rest duck-in-pond mark.
-struct QuackingDuck: View {
-    var size: CGFloat
-    var body: some View {
-        if let nsImage = Self.markImage {
-            Image(nsImage: nsImage)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: size, height: size)
-                .accessibilityLabel("Murmur")
-        } else {
-            Text("🦆").font(.system(size: size * 0.85))
-        }
-    }
-    private static let markImage: NSImage? = loadBrandMark(named: "duck-quacking")
-}
-
-/// Shared bundle loader for `Resources/Brand/<name>.png` + `<name>@2x.png`.
-private func loadBrandMark(named name: String) -> NSImage? {
-    let bundle = Bundle.module
-    guard let url1x = bundle.url(forResource: name, withExtension: "png"),
-          let image = NSImage(contentsOf: url1x) else { return nil }
-    let logical = image.size
-    if let url2x = bundle.url(forResource: "\(name)@2x", withExtension: "png"),
-       let img2x = NSImage(contentsOf: url2x),
-       let rep2x = img2x.representations.first {
-        rep2x.size = logical
-        image.addRepresentation(rep2x)
-    }
-    return image
-}
-
-private struct VisualEffect: NSViewRepresentable {
+/// `NSVisualEffectView` bridge. `appearance` pins the material to light or
+/// dark regardless of the system setting (used by the overlay HUD).
+struct VisualEffect: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blending: NSVisualEffectView.BlendingMode
+    var appearance: NSAppearance.Name? = nil
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
-        v.material = material
-        v.blendingMode = blending
         v.state = .active
+        updateNSView(v, context: context)
         return v
     }
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blending
+        nsView.appearance = appearance.flatMap(NSAppearance.init(named:))
+    }
 }

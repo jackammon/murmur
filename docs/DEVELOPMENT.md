@@ -11,7 +11,7 @@ open build/Murmur.app
 
 `wrap_app.sh` selects `/Applications/Xcode_16.4.app` when present and no `DEVELOPER_DIR` is set. It creates a locally signed app bundle. Microphone and Accessibility permissions are needed to record and paste.
 
-The package contains `MurmurKit` (audio, transcription, hotkeys, and output), `MurmurPlatform` (shared diagnostics and metrics), `MurmurStreaming`, the `MurmurApp` menu bar UI, and CLI/bench executables. To transcribe a file or run the benchmark:
+The package contains `MurmurKit` (audio, transcription, hotkeys, and output), `MurmurPlatform` (shared diagnostics and metrics), `MurmurDesign` (the stripe-field visual system; see [DESIGN.md](DESIGN.md)), `MurmurStreaming`, the `MurmurApp` menu bar UI, and CLI/bench executables. To transcribe a file or run the benchmark:
 
 ```sh
 swift run murmur-cli some-audio.wav

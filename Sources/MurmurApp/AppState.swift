@@ -96,6 +96,9 @@ public final class AppState: ObservableObject {
     @Published public var recentRecordings: [DiagnosticsReport.LastRecording] = []
     public static let recentRecordingsCap = 10
     @Published public var accessibilityTrusted: Bool = false
+    /// Microphone access was denied or is restricted. Refreshed when the
+    /// popover opens; drives its "Microphone access is off" notice.
+    @Published public var microphoneDenied: Bool = false
     /// Set when the most-recent recording came back silent (mic captured no
     /// usable audio — wrong/muted device). Drives the "Switch microphone"
     /// banner in the popover; cleared at the start of the next transcription.
@@ -108,8 +111,8 @@ public final class AppState: ObservableObject {
     /// or nil when transcription is local. Drives the overlay's network
     /// indicator (privacy contract).
     @Published public var remoteHost: String?
-    /// Lifecycle of an update check — drives both the menu-bar 🦆⬆
-    /// indicator and the Settings → About status line. Single source of
+    /// Lifecycle of an update check — drives both the menu-bar update
+    /// badge and the Settings → About status line. Single source of
     /// truth so a manual "Check for updates" click can flip from
     /// `.checking` to a terminal state and back to `.unknown` after a
     /// while if needed.

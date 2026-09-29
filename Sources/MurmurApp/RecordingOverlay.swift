@@ -2,10 +2,11 @@ import AppKit
 import SwiftUI
 import Combine
 import MurmurKit
+import MurmurDesign
 
 /// SPEC-004 — floating recording overlay.
 ///
-/// A small pill near the top of the screen surfacing recording / transcribing
+/// A small HUD near the top of the screen surfacing recording / transcribing
 /// state independently of the menu-bar icon. Click-through; never steals focus.
 /// Lifecycle is driven by `AppState.phase` via Combine — we never call
 /// show/hide directly from the orchestrator.
@@ -133,10 +134,21 @@ final class RecordingOverlay {
 
 // MARK: - SwiftUI pill
 
+/// The listening HUD.
+///
+/// Batch and Inline get a compact capsule: stripe wave, one or two lines of
+/// status, and the recording clock. Overlay mode gets a card with the live
+/// transcript under the same header. The surface and ink follow the
+/// Settings stripe style — colour or white stripes on a dark HUD, or black
+/// stripes on a light one — independent of the system appearance, like the
+/// system's own HUDs.
 struct OverlayPill: View {
     @ObservedObject var state: AppState
+    @AppStorage(StripeStyle.defaultsKey) private var style: StripeStyle = .color
 
     var body: some View {
+        let size = Self.size(for: state.phase, mode: state.activeDictationMode)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius(for: size), style: .continuous)
         Group {
             if isOverlayRecording {
                 transcriptPreview
@@ -144,25 +156,22 @@ struct OverlayPill: View {
                 statusPill
             }
         }
-        .frame(width: Self.size(for: state.phase, mode: state.activeDictationMode).width,
-               height: Self.size(for: state.phase, mode: state.activeDictationMode).height)
+        .frame(width: size.width, height: size.height)
         .background {
-            // Thinking-phase progress is rendered as a quiet amber wash
-            // filling left → right behind the material, instead of a
-            // labelled bar with percentages. Other phases show the material.
-            ZStack(alignment: .leading) {
-                Rectangle().fill(.ultraThinMaterial)
-                if case .transcribing = state.phase {
-                    Rectangle()
-                        .fill(Theme.amber.opacity(0.22))
-                        .frame(width: Self.size(for: state.phase,
-                                                mode: state.activeDictationMode).width
-                               * CGFloat(state.transcriptionProgress))
-                        .animation(.easeOut(duration: 0.20), value: state.transcriptionProgress)
-                }
+            ZStack {
+                VisualEffect(material: .hudWindow, blending: .behindWindow,
+                             appearance: style.hasDarkSurface ? .darkAqua : .aqua)
+                (style.hasDarkSurface ? Color.black.opacity(0.55) : Color.white.opacity(0.55))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.rFloating, style: .continuous))
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .environment(\.colorScheme, style.hasDarkSurface ? .dark : .light)
+    }
+
+    /// Capsule for the one-line phases; a softer card for bigger panels.
+    private func cornerRadius(for size: CGSize) -> CGFloat {
+        size.height <= 52 ? size.height / 2 : Theme.rFloating
     }
 
     private var isOverlayRecording: Bool {
@@ -170,19 +179,21 @@ struct OverlayPill: View {
         return state.activeDictationMode == .overlay
     }
 
+    private var ink: StripeInk { style.usesPalette ? .palette : .foreground }
+
+    // MARK: overlay-mode card
+
     /// Overlay mode needs a readable transcript surface rather than the
     /// one-line status pill used by Batch and Inline.
     private var transcriptPreview: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform")
-                    .foregroundStyle(Theme.coral)
-                Text("Live transcript preview")
+            HStack(spacing: 10) {
+                StripeWave(motion: .live(state.levelHistory), ink: ink)
+                    .frame(width: 46, height: 20)
+                Text("Listening")
                     .font(.murmurHeadline)
                 Spacer()
-                Text(String(format: "%.1fs", state.elapsedSeconds))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                clock
             }
             Text(state.livePreview.isEmpty
                  ? "Listening for words…"
@@ -191,20 +202,36 @@ struct OverlayPill: View {
                 .foregroundStyle(state.livePreview.isEmpty ? Color.secondary : Color.primary)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
+                .accessibilityLabel(previewAccessibilityLabel)
             Text("Rough draft · clean text pastes when you stop")
-                .font(.caption2)
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
         .padding(16)
+        .accessibilityElement(children: .contain)
     }
 
+    private var previewAccessibilityLabel: String {
+        state.livePreview.isEmpty ? "Listening for words" : "Live draft: \(state.livePreview)"
+    }
+
+    // MARK: status capsule
+
     private var statusPill: some View {
-        HStack(spacing: Theme.s12) {
+        HStack(spacing: 10) {
             indicator
-                .frame(minWidth: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(headline).font(.murmurHeadline)
-                sublineView
+                .frame(width: 56, height: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(headline)
+                    .font(.murmurHeadline)
+                    .lineLimit(1)
+                if let subline = plainSubline {
+                    Text(subline)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(isError ? 2 : 1)
+                        .fixedSize(horizontal: false, vertical: isError)
+                }
             }
             Spacer(minLength: 0)
             // Both chips can coexist: a kickoff recording with a remote
@@ -212,74 +239,53 @@ struct OverlayPill: View {
             // each network hop gets disclosed.
             if state.recordingMode == .agentKickoff,
                case .recording = state.phase {
-                modeChip
+                NetworkChip(label: "claude")
             }
             if showsRemoteChip {
-                remoteChip
+                NetworkChip(label: "remote")
+            }
+            if case .recording = state.phase {
+                clock
             }
         }
-        .padding(.horizontal, Theme.s16)
-        .padding(.vertical, Theme.s12)
+        .padding(.leading, 12)
+        .padding(.trailing, 16)
+        .accessibilityElement(children: .combine)
     }
 
+    private var clock: some View {
+        Text(ElapsedTime.format(state.elapsedSeconds))
+            .font(.system(size: 12).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(ElapsedTime.spoken(state.elapsedSeconds))
+    }
+
+    /// The stripe field carries the state: live while listening, a travelling
+    /// wave that fills with colour as transcription progresses, a quiet line
+    /// when done, and an exclamation mark on failure.
     @ViewBuilder
     private var indicator: some View {
         switch state.phase {
-        case .recording:
-            VoiceLevel(history: state.levelHistory)
+        case .recording, .starting:
+            StripeWave(motion: .live(state.levelHistory), ink: ink)
         case .transcribing:
-            Image(systemName: "waveform.circle")
-                .font(.body)
-                .foregroundStyle(Theme.amber)
+            StripeWave(motion: .working, ink: ink, progress: state.transcriptionProgress)
         case .polishing:
-            PolishingIndicator()
+            StripeWave(motion: .working, ink: ink)
         case .ready:
-            if state.recordingMode == .agentKickoff {
-                Image(systemName: state.lastKickoffSucceeded
-                      ? "sparkles"
-                      : "exclamationmark.triangle.fill")
-                    .font(.body)
-                    .foregroundStyle(state.lastKickoffSucceeded
-                                     ? Theme.amber
-                                     : Theme.coral)
+            if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
+                StripeWave(motion: .alert, ink: alertInk, animated: false)
             } else {
-                Image(systemName: state.lastPasted ? "checkmark.circle.fill" : "doc.on.clipboard")
-                    .font(.body)
-                    .foregroundStyle(Theme.moss)
+                StripeWave(motion: .quiet, ink: ink, animated: false)
             }
         case .error:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.body)
-                .foregroundStyle(Theme.coral)
+            StripeWave(motion: .alert, ink: alertInk, animated: false)
         default:
-            Image(systemName: "mic")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
+            StripeWave(motion: .resting, ink: ink, animated: false)
         }
     }
 
-    /// SPEC-031 mode chip — shown only during a kickoff-mode recording.
-    /// Doubles as the privacy contract's required network indicator
-    /// (the globe icon).
-    private var modeChip: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "globe")
-                .font(.caption2)
-            Text("claude")
-                .font(.system(size: 11, weight: .medium))
-        }
-        .foregroundStyle(Theme.amber)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Theme.amber.opacity(0.14))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Theme.amber.opacity(0.35), lineWidth: 1)
-                )
-        )
-    }
+    private var alertInk: StripeInk { style.usesPalette ? .solid(Theme.alert) : .foreground }
 
     /// SPEC-044 — the privacy contract's network indicator for remote
     /// transcription: visible the whole time audio destined for the wire is
@@ -292,36 +298,6 @@ struct OverlayPill: View {
         }
     }
 
-    private var remoteChip: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "globe")
-                .font(.caption2)
-            Text("remote")
-                .font(.system(size: 11, weight: .medium))
-        }
-        .foregroundStyle(Theme.amber)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Theme.amber.opacity(0.14))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Theme.amber.opacity(0.35), lineWidth: 1)
-                )
-        )
-    }
-
-    private var sublineView: some View {
-        // An error is an instruction ("sign in again in Settings → General"),
-        // so it gets the room to be read rather than a truncating single line.
-        Text(plainSubline)
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .lineLimit(isError ? 2 : 1)
-            .fixedSize(horizontal: false, vertical: isError)
-    }
-
     private var isError: Bool {
         if case .error = state.phase { return true }
         return false
@@ -330,17 +306,17 @@ struct OverlayPill: View {
     /// Errors need a bigger pill than the one-line phases.
     static func size(for phase: AppState.Phase, mode: DictationMode) -> CGSize {
         if case .recording = phase, mode == .overlay {
-            return CGSize(width: 460, height: 154)
+            return CGSize(width: 440, height: 150)
         }
-        if case .error = phase { return CGSize(width: 380, height: 78) }
-        return CGSize(width: 320, height: 60)
+        if case .error = phase { return CGSize(width: 360, height: 72) }
+        return CGSize(width: 272, height: 48)
     }
 
     private var headline: String {
         switch state.phase {
         case .recording:
             return state.recordingMode == .agentKickoff ? "Listening (kickoff)" : "Listening"
-        case .transcribing: return "Thinking"
+        case .transcribing: return "Transcribing"
         case .polishing:    return "Polishing"
         case .ready:
             if state.recordingMode == .agentKickoff {
@@ -352,14 +328,13 @@ struct OverlayPill: View {
         }
     }
 
-    private var plainSubline: String {
+    private var plainSubline: String? {
         switch state.phase {
         case .recording:
             if state.activeDictationMode == .overlay, !state.livePreview.isEmpty {
                 return String(state.livePreview.suffix(52))
             }
-            let secs = String(format: "%.1f", state.elapsedSeconds)
-            return "\(secs)s · press to stop"
+            return nil
         case .transcribing:
             // SPEC-044 — never claim "On your Mac" when audio is being sent
             // to a configured remote endpoint.
@@ -373,63 +348,32 @@ struct OverlayPill: View {
             if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
                 return state.lastKickoffError ?? "Transcript copied to clipboard"
             }
-            return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
+            return state.lastTranscript.map { String($0.prefix(48)) }
         case .error(let message):
             return message
         default:
-            return ""
+            return nil
         }
     }
 }
 
-/// Sliding-window waveform-style level meter. Each bar represents a slice
-/// of recent audio (newest on the right), so the meter actually reads as
-/// "voice activity over time" rather than all bars pulsing in lockstep.
-/// Coral fill at full strength on the latest bar, fading slightly toward
-/// the older edge for a sense of motion.
-private struct VoiceLevel: View {
-    let history: [Float]
-
-    private let barWidth: CGFloat = 3.5
-    private let barSpacing: CGFloat = 2.5
-    private let maxBarHeight: CGFloat = 30
+/// SPEC-031 / SPEC-044 network chip — the privacy contract's required
+/// indicator that audio or text is leaving the Mac.
+private struct NetworkChip: View {
+    let label: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: barSpacing) {
-            ForEach(Array(history.enumerated()), id: \.offset) { idx, level in
-                Capsule()
-                    .fill(Theme.coral.opacity(opacity(at: idx)))
-                    .frame(width: barWidth, height: barHeight(level))
-                    .animation(.easeOut(duration: 0.10), value: level)
-            }
+        HStack(spacing: 3) {
+            Image(systemName: "globe")
+                .font(.system(size: 9))
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
         }
-        .frame(height: maxBarHeight)
-    }
-
-    private func barHeight(_ level: Float) -> CGFloat {
-        let scaled = CGFloat(level) * maxBarHeight
-        return max(3, min(maxBarHeight, scaled))
-    }
-
-    /// Fade older bars (left) slightly so the rightmost (newest) reads as the
-    /// "live" edge of the waveform.
-    private func opacity(at index: Int) -> Double {
-        let total = max(1, history.count - 1)
-        let position = Double(index) / Double(total)  // 0 = oldest, 1 = newest
-        return 0.55 + 0.45 * position  // older bars at 0.55, newest at 1.0
-    }
-}
-
-/// A gently pulsing amber wand — the "Polishing" overlay indicator.
-/// `sparkles` is intentionally avoided (it marks kickoff success).
-private struct PolishingIndicator: View {
-    @State private var pulse = false
-    var body: some View {
-        Image(systemName: "wand.and.rays")
-            .font(.body)
-            .foregroundStyle(Theme.amber)
-            .opacity(pulse ? 1.0 : 0.4)
-            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulse)
-            .onAppear { pulse = true }
+        .foregroundStyle(Theme.caution)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(Theme.caution.opacity(0.16)))
+        .overlay(Capsule().strokeBorder(Theme.caution.opacity(0.35), lineWidth: 1))
+        .accessibilityLabel("Network: \(label)")
     }
 }

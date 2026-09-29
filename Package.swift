@@ -13,6 +13,10 @@ let package = Package(
             targets: ["MurmurPlatform"]
         ),
         .library(
+            name: "MurmurDesign",
+            targets: ["MurmurDesign"]
+        ),
+        .library(
             name: "MurmurKit",
             targets: ["MurmurKit"]
         ),
@@ -60,6 +64,13 @@ let package = Package(
             name: "MurmurPlatform",
             dependencies: [],
             path: "Sources/MurmurPlatform"
+        ),
+        // Stripe-field geometry, palette, and dither math shared by the app's
+        // menu-bar glyph, overlay, and brand mark. Foundation only.
+        .target(
+            name: "MurmurDesign",
+            dependencies: [],
+            path: "Sources/MurmurDesign"
         ),
         // Tiny Objective-C shim: lets Swift catch the NSExceptions that
         // AVAudioEngine.installTap raises on format mismatches (otherwise an
@@ -135,17 +146,20 @@ let package = Package(
             name: "MurmurApp",
             dependencies: [
                 "MurmurKit",
+                "MurmurDesign",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-            path: "Sources/MurmurApp",
-            resources: [
-                .process("Resources"),
-            ]
+            path: "Sources/MurmurApp"
         ),
         .testTarget(
             name: "MurmurKitTests",
             dependencies: ["MurmurKit"],
             path: "Tests/MurmurKitTests"
+        ),
+        .testTarget(
+            name: "MurmurDesignTests",
+            dependencies: ["MurmurDesign"],
+            path: "Tests/MurmurDesignTests"
         ),
     ]
 )

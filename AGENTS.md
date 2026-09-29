@@ -16,6 +16,7 @@
 
 - `MurmurKit`: audio, transcription, hotkeys, polish, and output
 - `MurmurPlatform`: diagnostics, shared policies, and benchmark metrics
+- `MurmurDesign`: stripe-field geometry, palette, and dither math for the app's visuals (see `docs/DESIGN.md`)
 - `MurmurStreaming`: streaming transcription helpers
 - `MurmurApp`: menu bar app
 - `MurmurCLI`: single-file transcription tool

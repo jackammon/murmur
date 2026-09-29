@@ -46,12 +46,20 @@ BIN_DIR="$(swift build -c release --show-bin-path)"
 BIN_PATH="$BIN_DIR/$BIN_NAME"
 [[ -x "$BIN_PATH" ]] || { echo "error: built binary not found at $BIN_PATH" >&2; exit 1; }
 
-# Regenerate the procedural app icon if missing or stale relative to its source.
+# Regenerate the procedural app icon if missing or stale relative to its
+# sources. The generator compiles with MurmurDesign so it draws the same mark.
 ICON_OUT="$ROOT/build/AppIcon.icns"
-ICON_SRC="$ROOT/scripts/make_icon.swift"
-if [[ ! -f "$ICON_OUT" ]] || [[ "$ICON_SRC" -nt "$ICON_OUT" ]]; then
+ICON_SRCS=("$ROOT/scripts/icon/main.swift" "$ROOT"/Sources/MurmurDesign/*.swift)
+ICON_STALE=0
+[[ -f "$ICON_OUT" ]] || ICON_STALE=1
+for src in "${ICON_SRCS[@]}"; do
+    if [[ "$src" -nt "$ICON_OUT" ]]; then ICON_STALE=1; fi
+done
+if [[ "$ICON_STALE" == 1 ]]; then
     echo "→ Generating AppIcon.icns..."
-    swift "$ICON_SRC"
+    mkdir -p "$ROOT/build"
+    swiftc -O "${ICON_SRCS[@]}" -o "$ROOT/build/make_icon"
+    "$ROOT/build/make_icon"
 fi
 
 echo "→ Assembling $BUNDLE (v$VERSION)..."

@@ -7,6 +7,7 @@ import ServiceManagement
 import Sparkle
 import UserNotifications
 import MurmurKit
+import MurmurDesign
 import MurmurPlatform
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
@@ -259,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installPopover()
         installHotkey()
         observePhaseForIcon()
+        observeLevelsForIcon()
         overlay = RecordingOverlay(state: appState)
 
         // SPEC-007 — wire the download controller to AppState (so progress
@@ -284,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Defensive: switching activation policy back to .accessory can hide
         // the menu-bar status item on macOS 15. Re-assert visibility on every
-        // policy flip so the duck stays put after onboarding / Settings close.
+        // policy flip so the icon stays put after onboarding / Settings close.
         ActivationPolicy.afterChange = { [weak self] in
             self?.statusItem.isVisible = true
         }
@@ -498,15 +500,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // Phase-driven NSImage is set in `updateIcon`; seed with the idle duck
-        // so the status item renders something on first paint before phase
-        // observation kicks in.
-        if let idle = Self.menuIcon(for: .idle) {
-            statusItem.button?.image = idle
-            statusItem.button?.imagePosition = .imageOnly
-        } else {
-            statusItem.button?.title = "🦆"
-        }
+        // Phase-driven glyph is set in `updateIcon`; seed with the resting
+        // mark so the status item renders on first paint.
+        statusItem.button?.image = StatusGlyph.image(for: .resting)
+        statusItem.button?.imagePosition = .imageOnly
         statusItem.button?.toolTip = "Murmur"
         statusItem.button?.setAccessibilityLabel("Murmur")
         statusItem.button?.target = self
@@ -518,7 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 320, height: 320)
+        popover.contentSize = NSSize(width: 280, height: 240)
         popover.contentViewController = NSHostingController(
             rootView: MenuBarContent(state: appState)
         )
@@ -650,6 +647,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if appState.accessibilityTrusted != trusted {
             appState.accessibilityTrusted = trusted
         }
+        let mic = AVCaptureDevice.authorizationStatus(for: .audio)
+        let micDenied = mic == .denied || mic == .restricted
+        if appState.microphoneDenied != micDenied {
+            appState.microphoneDenied = micDenied
+        }
     }
 
     private func monitorClicksOutside() {
@@ -683,61 +685,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon(for phase: AppState.Phase, hasUpdate: Bool) {
         guard let button = statusItem.button else { return }
-        if let image = Self.menuIcon(for: phase) {
-            button.image = image
-            button.title = hasUpdate ? "⬆" : ""
-            button.imagePosition = hasUpdate ? .imageLeading : .imageOnly
-        } else {
-            // No icon for this phase yet (error). Fall back to a glyph so the
-            // user still sees something distinctive.
-            button.image = nil
-            button.title = "❌"
-            button.imagePosition = .noImage
-        }
+        button.image = Self.statusGlyph(for: phase, levels: appState.levelHistory, hasUpdate: hasUpdate)
+        button.imagePosition = .imageOnly
+        button.title = ""
+        let label = Self.statusLabel(for: phase, hasUpdate: hasUpdate)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
     }
 
-    /// Cached template NSImages for each phase. Loaded once from the SwiftPM
-    /// resource bundle; nil means "no icon, use the fallback glyph."
-    private static let menuIconCache: [String: NSImage] = {
-        var cache: [String: NSImage] = [:]
-        for name in ["idle", "recording", "warming", "transcribing", "ready"] {
-            if let img = loadMenuTemplateIcon(named: "duck-\(name)") {
-                cache[name] = img
+    /// While recording, the menu-bar glyph follows the microphone level.
+    /// Throttled: the glyph is tiny and a redraw per audio buffer buys nothing.
+    private func observeLevelsForIcon() {
+        appState.$levelHistory
+            .throttle(for: .milliseconds(80), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] levels in
+                guard let self, case .recording = self.appState.phase,
+                      let button = self.statusItem.button else { return }
+                button.image = Self.statusGlyph(for: .recording, levels: levels,
+                                                hasUpdate: self.appState.updateStatus.hasAvailableUpdate)
             }
-        }
-        return cache
-    }()
+            .store(in: &cancellables)
+    }
 
-    private static func menuIcon(for phase: AppState.Phase) -> NSImage? {
+    private static func statusGlyph(for phase: AppState.Phase, levels: [Float], hasUpdate: Bool) -> NSImage {
         switch phase {
-        case .warming:              return menuIconCache["warming"]
-        case .idle:                 return menuIconCache["idle"]
-        case .ready:                return menuIconCache["ready"]
-        case .starting, .recording: return menuIconCache["recording"]
-        case .transcribing, .polishing: return menuIconCache["transcribing"]
-        case .error:                return nil
+        case .warming:
+            return StatusGlyph.image(for: .resting, dimmed: true, badge: hasUpdate)
+        case .idle, .ready:
+            return StatusGlyph.image(for: .resting, badge: hasUpdate)
+        case .starting, .recording:
+            return StatusGlyph.image(for: .live(levels), badge: hasUpdate)
+        case .transcribing, .polishing:
+            return StatusGlyph.image(for: .quiet, badge: hasUpdate)
+        case .error:
+            return StatusGlyph.image(for: .alert, badge: hasUpdate)
         }
     }
 
-    /// Load an `@1x` PNG from the resource bundle and attach the matching
-    /// `@2x` rep so retina displays render the icon at native resolution.
-    /// `isTemplate = true` lets macOS auto-tint to the menu-bar text colour
-    /// (black in light mode, white in dark mode).
-    private static func loadMenuTemplateIcon(named name: String) -> NSImage? {
-        let bundle = Bundle.module
-        // SPM `.process(...)` flattens directory structure, so resources land
-        // at the bundle root regardless of source folder layout.
-        guard let url1x = bundle.url(forResource: name, withExtension: "png"),
-              let image = NSImage(contentsOf: url1x) else { return nil }
-        let logicalSize = image.size
-        if let url2x = bundle.url(forResource: "\(name)@2x", withExtension: "png"),
-           let img2x = NSImage(contentsOf: url2x),
-           let rep2x = img2x.representations.first {
-            rep2x.size = logicalSize
-            image.addRepresentation(rep2x)
+    private static func statusLabel(for phase: AppState.Phase, hasUpdate: Bool) -> String {
+        let status: String
+        switch phase {
+        case .warming:      status = "Loading model"
+        case .idle, .ready: status = "Ready"
+        case .starting:     status = "Starting"
+        case .recording:    status = "Listening"
+        case .transcribing: status = "Transcribing"
+        case .polishing:    status = "Polishing"
+        case .error:        status = "Dictation failed"
         }
-        image.isTemplate = true
-        return image
+        return hasUpdate ? "Murmur — \(status), update available" : "Murmur — \(status)"
     }
 
     // MARK: - hotkey

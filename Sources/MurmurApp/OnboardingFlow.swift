@@ -17,10 +17,10 @@ import MurmurKit
 // already complete. AppDelegate defers its warmTranscriber call until
 // onboarding closes so there's no concurrent re-download.
 //
-// Design system: see Theme.swift. Onboarding is a "reception" surface, so
-// it uses CreamSurface as the background and the serif titles. Step icons
-// are restrained regular-weight glyphs in cream-raised circles — one motif
-// across all steps reads more designed than a parade of `.circle.fill`s.
+// Design system: see Theme.swift. Onboarding uses the plain window
+// background and system type. Step icons are restrained regular-weight
+// glyphs in soft tinted circles — one motif across all steps reads more
+// designed than a parade of `.circle.fill`s.
 
 enum OnboardingStep: Int, CaseIterable {
     case welcome
@@ -202,7 +202,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            CreamSurface().ignoresSafeArea()
+            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
 
             VStack(spacing: 0) {
                 stepBody
@@ -331,7 +331,7 @@ struct OnboardingView: View {
         } else if state.modelDownloaded {
             HStack(spacing: Theme.s4) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.moss)
+                    .foregroundStyle(Theme.success)
                 Text("Ready").font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -340,7 +340,7 @@ struct OnboardingView: View {
 
 // MARK: - shared step chrome
 
-/// Restrained step icon: a regular-weight SF Symbol in a soft cream-raised
+/// Restrained step icon: a regular-weight SF Symbol in a soft tinted
 /// circle. One motif across every step.
 private struct StepGlyph: View {
     let symbol: String
@@ -348,11 +348,11 @@ private struct StepGlyph: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Theme.creamRaised)
+                .fill(Color.primary.opacity(0.06))
                 .frame(width: 96, height: 96)
             Image(systemName: symbol)
                 .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(Theme.ink.opacity(0.85))
+                .foregroundStyle(Color.primary.opacity(0.85))
         }
     }
 }
@@ -362,11 +362,11 @@ private struct StepGlyph: View {
 private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: Theme.s16) {
-            DuckMark(size: 96)
+            MurmurMark(size: 80)
             Text("Welcome to Murmur")
-                .font(.murmurHeroSerif)
+                .font(.murmurHero)
             Text("Speak. Send. Privately.")
-                .font(.murmurTaglineSerif)
+                .font(.murmurTagline)
                 .foregroundStyle(.secondary)
 
             VStack(spacing: Theme.s8) {
@@ -397,7 +397,7 @@ private struct WelcomeStep: View {
         HStack(alignment: .top, spacing: Theme.s12) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundStyle(Theme.ink.opacity(0.85))
+                .foregroundStyle(Color.primary.opacity(0.85))
                 .frame(width: 26, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.callout.weight(.medium))
@@ -409,7 +409,7 @@ private struct WelcomeStep: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .murmurCardOnCream(padding: Theme.s12)
+        .murmurCard(padding: Theme.s12)
     }
 }
 
@@ -422,7 +422,7 @@ private struct MicrophoneStep: View {
     var body: some View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: glyph)
-            Text("Microphone").font(.murmurTitleSerif)
+            Text("Microphone").font(.murmurTitle)
             Text(bodyCopy)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -468,11 +468,11 @@ private struct MicrophoneStep: View {
             Group {
                 if let err = micTest.errorMessage {
                     Label(err, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(Theme.caution)
                         .multilineTextAlignment(.center)
                 } else if micTest.sawSignal {
                     Label("Sounds good — that mic is picking you up.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Theme.moss)
+                        .foregroundStyle(Theme.success)
                 } else if micTest.isTesting {
                     Text("Speak — the bars should move.").foregroundStyle(.secondary)
                 } else {
@@ -527,7 +527,7 @@ private struct AccessibilityStep: View {
     var body: some View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: state.accessibilityTrusted ? "checkmark" : "command")
-            Text("Auto-paste").font(.murmurTitleSerif)
+            Text("Auto-paste").font(.murmurTitle)
             Text(bodyCopy)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -537,7 +537,7 @@ private struct AccessibilityStep: View {
             if state.accessibilityTrusted {
                 Label("Granted", systemImage: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Theme.moss)
+                    .foregroundStyle(Theme.success)
             } else {
                 Text("Click Open System Settings, then turn on Murmur. We'll detect the change automatically.")
                     .font(.caption)
@@ -564,7 +564,7 @@ private struct HotkeyStep: View {
     var body: some View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "keyboard")
-            Text("Pick your hotkey").font(.murmurTitleSerif)
+            Text("Pick your hotkey").font(.murmurTitle)
             Text("Press once to start dictating, again to stop. ⌃⇧Space is set as the default — change it below if you'd like.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -585,7 +585,7 @@ private struct InstallStep: View {
                 .animation(.easeInOut(duration: 0.25), value: state.modelDownloaded)
 
             Text(state.modelDownloaded ? "Speech model ready" : "Installing the speech model")
-                .font(.murmurTitleSerif)
+                .font(.murmurTitle)
 
             Text(detailText)
                 .multilineTextAlignment(.center)
@@ -597,7 +597,7 @@ private struct InstallStep: View {
 
             if let err = state.modelError {
                 Label(err, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.amber)
+                    .foregroundStyle(Theme.caution)
                     .frame(maxWidth: 380)
                     .multilineTextAlignment(.center)
             } else if !state.modelDownloaded {
@@ -631,7 +631,7 @@ private struct DemoStep: View {
             HStack(spacing: Theme.s12) {
                 StepGlyph(symbol: "waveform.badge.mic")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Try it").font(.murmurTitleSerif)
+                    Text("Try it").font(.murmurTitle)
                     Text("Click the box, press your hotkey, and say something.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
@@ -675,7 +675,7 @@ private struct PolishStep: View {
         let installed = PolishModelCatalog.isInstalled()
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "sparkles")
-            Text("Polish your dictation").font(.murmurTitleSerif)
+            Text("Polish your dictation").font(.murmurTitle)
             Text("An optional on-device model cleans up filler words, grammar, and punctuation before your text is pasted. Experimental.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -685,7 +685,7 @@ private struct PolishStep: View {
             if polishEngine == "llamaCpp" {
                 Label("Already enabled — ready to use.", systemImage: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Theme.moss)
+                    .foregroundStyle(Theme.success)
             } else {
                 VStack(spacing: Theme.s8) {
                     Toggle("Enable local LLM polish", isOn: $state.enablePolish)
@@ -711,8 +711,8 @@ private struct DoneStep: View {
     var body: some View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "checkmark")
-            Text("You're all set").font(.murmurTitleSerif)
-            Text("Press your hotkey anywhere to dictate. The duck in your menu bar opens Settings.")
+            Text("You're all set").font(.murmurTitle)
+            Text("Press your hotkey anywhere to dictate. The Murmur icon in your menu bar opens Settings.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 420)
@@ -725,8 +725,6 @@ private struct DoneStep: View {
                        text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
                 tipRow(symbol: "lock.shield",
                        text: "Audio stays on your Mac. Dictation makes no network calls unless you opt in to a remote endpoint in Settings.")
-                tipRow(symbol: "sparkles",
-                       text: "🦆 has more tricks up its feathers. Stay tuned.")
             }
             .frame(maxWidth: 440)
             Spacer()

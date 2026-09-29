@@ -87,7 +87,7 @@ struct MicLevelMeter: View {
         HStack(alignment: .center, spacing: 3) {
             ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
                 Capsule()
-                    .fill(Theme.moss.opacity(0.85))
+                    .fill(Theme.success.opacity(0.85))
                     .frame(width: 3, height: max(3, min(maxHeight, CGFloat(level) * maxHeight)))
                     .animation(.easeOut(duration: 0.1), value: level)
             }

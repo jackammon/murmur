@@ -4,7 +4,7 @@ import MurmurKit
 
 /// SPEC-031 v3 — floating window that surfaces a completed kickoff
 /// result. Opened by the notification click handler (or, when
-/// notifications are denied, by clicking the menu-bar duck).
+/// notifications are denied, by clicking the menu-bar icon).
 @MainActor
 final class ResponseWindowController {
     private var window: NSWindow?

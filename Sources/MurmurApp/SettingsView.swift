@@ -4,6 +4,7 @@ import KeyboardShortcuts
 import os
 import ServiceManagement
 import MurmurKit
+import MurmurDesign
 import MurmurPlatform
 
 // Settings scene. SwiftUI TabView in an NSWindow (managed by
@@ -11,8 +12,8 @@ import MurmurPlatform
 //
 // Per the design critique, the Models tab collapsed into General — it was
 // a single picker hidden behind a tab. Section headers across every Form
-// use the small-caps SectionHeader from Theme.swift. About is the only
-// "reception" pane and uses CreamSurface + serif titles.
+// use SectionHeader from Theme.swift. About is the only
+// "reception" pane, with the brand mark above the version line.
 
 struct SettingsView: View {
     enum Tab: Hashable { case general, shortcut, stats, history, about }
@@ -180,7 +181,7 @@ private struct GeneralPane: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         if isLoaded {
-                            Text("Active").font(.caption.weight(.semibold)).foregroundStyle(Theme.moss)
+                            Text("Active").font(.caption.weight(.semibold)).foregroundStyle(Theme.success)
                         }
                         Button("Delete") { confirmDeleteSpeechModel(variant) }
                             .font(.caption)
@@ -436,7 +437,7 @@ private struct GeneralPane: View {
                     expiredRow
                 } else {
                     HStack(spacing: Theme.s8) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.moss)
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.success)
                         Text("Signed in · expires \(expires.formatted(.relative(presentation: .named)))")
                             .font(.caption)
                         Spacer()
@@ -456,7 +457,7 @@ private struct GeneralPane: View {
 
     private var expiredRow: some View {
         HStack(spacing: Theme.s8) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.caution)
             Text("Session expired").font(.caption)
             Button("Sign in again") { signInCloudflare() }.font(.caption)
         }
@@ -541,7 +542,7 @@ private struct GeneralPane: View {
                         MicLevelMeter(levels: micTest.levels)
                         if micTest.sawSignal {
                             Label("Sounds good", systemImage: "checkmark.circle.fill")
-                                .font(.caption).foregroundStyle(Theme.moss)
+                                .font(.caption).foregroundStyle(Theme.success)
                         } else {
                             Text("Speak — bars should move.")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -552,7 +553,7 @@ private struct GeneralPane: View {
                 if let err = micTest.errorMessage {
                     Label(err, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(Theme.caution)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -641,6 +642,15 @@ private struct GeneralPane: View {
             }
 
             Section {
+                StripeStylePicker()
+                Text("Colours the listening overlay and the popover's live wave.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Appearance")
+            }
+
+            Section {
                 LabeledContent("Transcription language", value: "English (en)")
                 Text("Dictation is decoded in English without automatic language detection.")
                     .font(.caption)
@@ -697,7 +707,6 @@ private struct GeneralPane: View {
         }
         .formStyle(.grouped)
         .padding()
-        .creamSettingsBackground()
         .onAppear {
             // Pick up the session-flag if reconcile flipped the toggle at
             // launch (user revoked us in System Settings while away).
@@ -788,6 +797,47 @@ private struct GeneralPane: View {
 
 // MARK: - Shortcut
 
+/// Three preview tiles for the stripe style, each showing a working wave in
+/// that style.
+private struct StripeStylePicker: View {
+    @AppStorage(StripeStyle.defaultsKey) private var style: StripeStyle = .color
+
+    var body: some View {
+        HStack(spacing: Theme.s12) {
+            ForEach(StripeStyle.allCases, id: \.self) { option in
+                Button {
+                    style = option
+                } label: {
+                    VStack(spacing: 6) {
+                        StripeWave(motion: .working, ink: option.usesPalette ? .palette : .foreground)
+                            .frame(width: 58, height: 24)
+                            .foregroundStyle(option.hasDarkSurface ? Color.white : Color.black)
+                            .frame(width: 96, height: 48)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(option.hasDarkSurface ? Color(white: 0.1) : Color(white: 0.96))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(style == option ? Color.accentColor : Theme.hairline,
+                                                  lineWidth: style == option ? 2 : 1)
+                            )
+                        Text(option.title)
+                            .font(.caption)
+                            .foregroundStyle(style == option ? .primary : .secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.title)
+                .accessibilityAddTraits(style == option ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 private struct ShortcutPane: View {
     @AppStorage(HotkeyManager.rightOptionDefaultsKey) private var rightOptionHoldToTalk = false
 
@@ -832,7 +882,6 @@ private struct ShortcutPane: View {
         }
         .formStyle(.grouped)
         .padding()
-        .creamSettingsBackground()
     }
 
     private static let f5ToF18Command = "hidutil property --set '{\"UserKeyMapping\":[{\"HIDKeyboardModifierMappingSrc\":0x0C000000CF,\"HIDKeyboardModifierMappingDst\":0x70000006D}]}'"
@@ -950,7 +999,7 @@ private struct AboutPane: View {
 
     var body: some View {
         ZStack {
-            CreamSurface().ignoresSafeArea()
+            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: Theme.s24) {
                     hero
@@ -970,10 +1019,10 @@ private struct AboutPane: View {
 
     private var hero: some View {
         VStack(spacing: Theme.s8) {
-            DuckMark(size: 88)
-            Text("Murmur").font(.murmurTitleSerif)
+            MurmurMark(size: 72)
+            Text("Murmur").font(.murmurTitle)
             Text("Speak. Send. Privately.")
-                .font(.murmurTaglineSerif)
+                .font(.murmurTagline)
                 .foregroundStyle(.secondary)
             versionLine
                 .padding(.top, Theme.s4)
@@ -1008,7 +1057,7 @@ private struct AboutPane: View {
                 Label("Up to date", systemImage: "checkmark.circle.fill")
                     .labelStyle(.titleAndIcon)
                     .font(.caption)
-                    .foregroundStyle(Theme.moss)
+                    .foregroundStyle(Theme.success)
             }
         case .available(let release):
             HStack(spacing: 4) {
@@ -1021,7 +1070,7 @@ private struct AboutPane: View {
                         .font(.caption)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Theme.moss)
+                .foregroundStyle(Theme.success)
             }
         case .upgrading:
             HStack(spacing: 4) {
@@ -1076,7 +1125,7 @@ private struct AboutPane: View {
                             HStack {
                                 Text(item.q)
                                     .font(.callout.weight(.medium))
-                                    .foregroundStyle(Theme.ink.opacity(0.85))
+                                    .foregroundStyle(Color.primary.opacity(0.85))
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: Theme.s8)
                                 Image(systemName: "chevron.right")
@@ -1216,7 +1265,6 @@ private struct StatsPane: View {
         }
         .formStyle(.grouped)
         .padding()
-        .creamSettingsBackground()
         .task { await refresh() }
         .onChange(of: showUsageStats) { _ in
             Task { await refresh() }
@@ -1427,7 +1475,7 @@ private struct StatsPane: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 56, alignment: .leading)
                     Capsule()
-                        .fill(Theme.amber.opacity(0.6))
+                        .fill(Theme.caution.opacity(0.6))
                         .frame(width: width, height: 8)
                     Spacer(minLength: Theme.s8)
                     Text(count.formatted())
@@ -1626,7 +1674,6 @@ private struct HistoryPane: View {
         }
         .formStyle(.grouped)
         .padding()
-        .creamSettingsBackground()
         .task {
             await refresh()
             await syncPolicy()

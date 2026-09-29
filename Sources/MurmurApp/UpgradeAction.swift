@@ -38,7 +38,7 @@ enum UpgradeAction {
     ///      separate goal and would NOT have fixed this bug.
     ///   4. relaunches — by full path first (the exact bundle brew installed),
     ///      then bundle id, then name; robust against the LaunchServices races
-    ///      a brew swap can introduce, and always runs so the duck comes back
+    ///      a brew swap can introduce, and always runs so the menu-bar icon comes back
     ///      even if brew exits non-zero.
     ///   5. removes itself.
     ///
@@ -133,7 +133,7 @@ enum UpgradeAction {
 
         // Quit after 1.5 s — long enough for the banner update to render
         // and give the user a moment to see what's happening before the
-        // duck disappears.
+        // menu-bar icon disappears.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             NSApplication.shared.terminate(nil)
         }
