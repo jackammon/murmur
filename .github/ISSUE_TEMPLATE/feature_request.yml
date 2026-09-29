@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest an improvement to Murmur.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like Murmur to help with?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What behavior would you expect?
+    validations:
+      required: true
