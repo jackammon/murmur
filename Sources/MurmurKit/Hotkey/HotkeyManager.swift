@@ -14,14 +14,6 @@ public extension KeyboardShortcuts.Name {
         default: .init(.f5)
     )
 
-    /// combo for the lower-frequency / higher-commitment action — the
-    /// user is opting into a multi-step background workflow
-    /// (consent → spawn → notification → attach), and an ergonomic
-    /// launch keeps the cumulative friction tolerable.
-    static let agentKickoff = Self(
-        "murmur.agentKickoff",
-        default: .init(.space, modifiers: [.control])
-    )
 }
 
 /// Convenience helpers for surfacing the user's current hotkey in copy.
@@ -87,16 +79,6 @@ public final class HotkeyManager {
     /// toggle-on-press. Equivalent to `register(onKeyDown: action, onKeyUp: {})`.
     public func registerToggle(_ action: @escaping @MainActor () -> Void) {
         register(onKeyDown: action, onKeyUp: {})
-    }
-
-    /// support for kickoff is a flagged follow-up in the spec's open
-    /// questions. Intended to be called once at app launch, AFTER
-    /// `register(...)` — the dictation register clears all handlers, so
-    /// kickoff is installed second to survive.
-    public func registerKickoff(_ action: @escaping @MainActor () -> Void) {
-        KeyboardShortcuts.onKeyDown(for: .agentKickoff) {
-            Task { @MainActor in action() }
-        }
     }
 
     /// Register after `registerToggle`, which clears KeyboardShortcuts
