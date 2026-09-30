@@ -1,22 +1,31 @@
-# Murmur
+<div align="center">
+  <img src="assets/murmur-icon.png" alt="Murmur app icon" width="96">
+  <h1>Murmur</h1>
+  <p><strong>Private, on-device dictation for Mac.</strong></p>
+  <p>
+    <a href="#install">Install</a> ·
+    <a href="#building-from-source">Building from source</a> ·
+    <a href="#troubleshooting">Troubleshooting</a>
+  </p>
+</div>
 
-<p align="center">
-  <img src="assets/murmur-icon.png" alt="Murmur app icon" width="144">
-</p>
+https://github.com/user-attachments/assets/f83903d6-c298-4e09-b4e3-de9c059b0df6
 
-![Live dictation in Batch, Overlay, and Inline modes](assets/murmur-demo.gif)
+Murmur is a small Mac menu bar app that turns your voice into text wherever your cursor is. Press a shortcut, talk, and your words appear. Transcription runs locally on your Mac with WhisperKit. No account, no subscription, and your audio never leaves your computer.
 
-Murmur is a local macOS menu bar dictation app. Speak, and your words appear where you are typing.
-
-- **Batch** transcribes a complete recording and pastes the finished text when you stop.
-- **Overlay** shows a rough transcript while you speak and pastes the cleaned result when you stop.
+- **Batch** pastes the full transcript when you stop.
+- **Overlay** shows a live draft, then pastes the cleaned transcript.
 - **Inline** pastes finalized phrases as you speak.
 
-Transcription and transcript handling always run on this Mac; audio and transcript text stay on-device. Internet access is used to download speech and polish models and to check for and download app updates. Microphone and Accessibility permissions are needed for recording and automatic paste.
+Optionally, a small local LLM (Gemma 4) can clean up filler words, punctuation, and grammar before pasting. Murmur also tracks how much you dictate and how much time you save compared with typing.
+
+Microphone and Accessibility permissions are needed for recording and automatic paste.
+
+There's no one-click download yet. Shipping a signed, notarized Mac app needs Apple's $99/year developer membership. If you'd like to chip in toward that, I'll happily put together an easy installer. Until then, the steps below take a few minutes.
 
 ## Install
 
-Murmur runs on macOS 14 or newer. Building requires Xcode 16.3 or newer with Swift 6.1+. Xcode 16.3 requires macOS Sequoia 15.2 or newer to run; the app's deployment target remains macOS 14.
+Murmur supports macOS 14 or newer. Building requires Xcode 16 or newer with Swift 6.0+. Xcode 16.2 is the newest release that runs on macOS 14.
 
 Before the first build, set up a stable local signing identity. This prevents macOS from treating every rebuild as a different app and discarding its Microphone and Accessibility grants:
 
@@ -60,9 +69,9 @@ For a fresh-install test, remove the app plus downloaded models, history, settin
 bash scripts/uninstall.sh --all-data
 ```
 
-## Development
+## Building from source
 
-The app is tested on macOS 14 and newer with Swift 6.1+. `scripts/wrap_app.sh` creates a signed app bundle, `scripts/install.sh` installs it locally, and `scripts/package_dmg.sh` packages it as a disk image.
+The app is tested on macOS 14 and newer with Swift 6.0+. `scripts/wrap_app.sh` creates a signed app bundle, `scripts/install.sh` installs it locally, and `scripts/package_dmg.sh` packages it as a disk image.
 
 ```sh
 swift test
