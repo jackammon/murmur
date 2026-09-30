@@ -18,3 +18,14 @@ public enum ElapsedTime {
         return secs == 0 ? minText : "\(minText) \(secText)"
     }
 }
+
+/// A version number as people read it: "1.0.0" → "1", "1.2.0" → "1.2".
+/// Prerelease versions ("2.0.0-alpha.3") are shown as written.
+public enum VersionText {
+    public static func display(_ version: String) -> String {
+        guard !version.contains("-") else { return version }
+        var parts = version.split(separator: ".").map(String.init)
+        while parts.count > 1, parts.last == "0" { parts.removeLast() }
+        return parts.joined(separator: ".")
+    }
+}

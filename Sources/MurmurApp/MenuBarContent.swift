@@ -71,7 +71,7 @@ struct MenuBarContent: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            LeanMarkShape()
+            LeanMarkShape(thickness: LeanMark.menuBarThickness)
                 .fill(.primary)
                 .frame(width: 16, height: 14)
                 .accessibilityHidden(true)

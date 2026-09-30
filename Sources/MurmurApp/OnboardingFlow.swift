@@ -380,11 +380,6 @@ private struct WelcomeStep: View {
                     title: "Fast and accurate",
                     body: "Transcribed in a fraction of the time you spent speaking, reliable on natural conversation. Backed by benchmarks."
                 )
-                privacyRow(
-                    icon: "shield.checkered",
-                    title: "Open source, MIT",
-                    body: "Read every line. The same code runs your dictation."
-                )
             }
             .padding(.top, Theme.s12)
             .frame(maxWidth: 460)

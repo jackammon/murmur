@@ -18,3 +18,13 @@ final class ElapsedTimeTests: XCTestCase {
         XCTAssertEqual(ElapsedTime.spoken(125), "2 minutes 5 seconds")
     }
 }
+
+final class VersionTextTests: XCTestCase {
+    func testDisplay() {
+        XCTAssertEqual(VersionText.display("1.0.0"), "1")
+        XCTAssertEqual(VersionText.display("1.2.0"), "1.2")
+        XCTAssertEqual(VersionText.display("1.2.3"), "1.2.3")
+        XCTAssertEqual(VersionText.display("10.0"), "10")
+        XCTAssertEqual(VersionText.display("2.0.0-alpha.3"), "2.0.0-alpha.3")
+    }
+}

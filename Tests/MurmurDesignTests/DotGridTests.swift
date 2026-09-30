@@ -123,7 +123,7 @@ final class PasteAnimationTests: XCTestCase {
 final class LeanMarkTests: XCTestCase {
     func testPillsFitTheBox() {
         for pill in LeanMark.pills {
-            let (x0, y0, x1, y1) = LeanMark.bounds(of: pill)
+            let (x0, y0, x1, y1) = LeanMark.bounds(of: pill, thickness: LeanMark.menuBarThickness)
             XCTAssertGreaterThanOrEqual(x0, 0)
             XCTAssertGreaterThanOrEqual(y0, 0)
             XCTAssertLessThanOrEqual(x1, LeanMark.width + 0.25)

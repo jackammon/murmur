@@ -14,7 +14,7 @@ import MurmurDesign
 @MainActor
 final class RecordingOverlay {
     private var panel: NSPanel?
-    private var hostingView: NSHostingView<OverlayPill>?
+    private var hostingView: OverlayHostingView<OverlayPill>?
     private var cancellable: AnyCancellable?
     private let state: AppState
     private let model = OverlayModel()
@@ -90,7 +90,7 @@ final class RecordingOverlay {
         if panel != nil { return }
 
         let pill = OverlayPill(state: state, model: model)
-        let host = NSHostingView(rootView: pill)
+        let host = OverlayHostingView(rootView: pill)
         host.frame = NSRect(origin: .zero, size: OverlayPill.size(for: state, pasting: model.paste != nil))
 
         let panel = NSPanel(
@@ -115,12 +115,19 @@ final class RecordingOverlay {
     }
 
     /// Match the window to the SwiftUI frame for the current state. Keeps the
-    /// top edge and horizontal centre in place so the HUD doesn't drift when,
-    /// say, the Overlay card becomes the compact pill.
+    /// top edge and horizontal centre in place so the HUD doesn't drift when
+    /// it changes size, e.g. from the compact pill to the error pill.
+    ///
+    /// Also decides whether the panel takes clicks: only the Overlay card
+    /// does, for its Stop button, and only while recording. Everything else
+    /// stays click-through.
     private func resizePanel() {
         guard let panel else { return }
+        let takesClicks = OverlayPill.showsStopButton(state)
+        if panel.ignoresMouseEvents == takesClicks { panel.ignoresMouseEvents = !takesClicks }
         let size = OverlayPill.size(for: state, pasting: model.paste != nil)
         guard panel.frame.size != size else { return }
+        defer { panel.invalidateShadow() }
         let old = panel.frame
         panel.setFrame(NSRect(x: (old.midX - size.width / 2).rounded(),
                               y: old.maxY - size.height,
@@ -213,7 +220,7 @@ struct OverlayPill: View {
                                      style: .continuous)
         let dark = style.isDark(systemIsDark: systemScheme == .dark)
         Group {
-            if isOverlayRecording {
+            if Self.usesCard(state) {
                 transcriptPreview
             } else if let message = Self.message(for: state) {
                 messagePill(message)
@@ -240,10 +247,8 @@ struct OverlayPill: View {
 
     /// The panel size for the current state.
     static func size(for state: AppState, pasting: Bool) -> CGSize {
-        if case .recording = state.phase, state.activeDictationMode == .overlay {
-            return CGSize(width: 440, height: 150)
-        }
         if case .error = state.phase { return CGSize(width: 360, height: 72) }
+        if usesCard(state) { return CGSize(width: 440, height: 150) }
         if !pasting, message(for: state) != nil { return CGSize(width: 300, height: compactHeight) }
         let chips = (showsKickoffChip(state) ? 64 : 0) + (showsRemoteChip(state) ? 70 : 0)
         return CGSize(width: 112 + CGFloat(chips), height: compactHeight)
@@ -362,9 +367,21 @@ struct OverlayPill: View {
 
     // MARK: overlay-mode card
 
-    private var isOverlayRecording: Bool {
-        guard case .recording = state.phase else { return false }
-        return state.activeDictationMode == .overlay
+    /// Overlay mode uses the card for the whole session — listening,
+    /// transcribing and the paste — and never the compact pill, so only one
+    /// HUD shape appears per dictation. Errors still use the error pill.
+    static func usesCard(_ state: AppState) -> Bool {
+        guard state.activeDictationMode == .overlay, state.recordingMode == .dictation else { return false }
+        switch state.phase {
+        case .recording, .transcribing, .polishing, .ready: return true
+        default: return false
+        }
+    }
+
+    /// The card's Stop button shows while an Overlay recording runs.
+    static func showsStopButton(_ state: AppState) -> Bool {
+        guard usesCard(state), case .recording = state.phase else { return false }
+        return true
     }
 
     /// Overlay mode needs a readable transcript surface rather than the
@@ -372,31 +389,47 @@ struct OverlayPill: View {
     private var transcriptPreview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                DotWave(motion: .live(state.levelHistory))
+                DotWave(motion: waveMotion)
                     .frame(width: 44, height: 18)
                 Spacer()
                 if Self.showsKickoffChip(state) { NetworkChip(label: "claude") }
                 if Self.showsRemoteChip(state) { NetworkChip(label: "remote") }
                 clock
+                if Self.showsStopButton(state) { StopButton() }
             }
-            Text(state.livePreview.isEmpty
-                 ? "Listening for words…"
-                 : String(state.livePreview.suffix(240)))
+            Text(cardText.isEmpty ? "Listening for words…" : String(cardText.suffix(240)))
                 .font(.system(size: 15))
-                .foregroundStyle(state.livePreview.isEmpty ? Color.secondary : Color.primary)
+                .foregroundStyle(cardText.isEmpty ? Color.secondary : Color.primary)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-                .accessibilityLabel(previewAccessibilityLabel)
-            Text("Rough draft · clean text pastes when you stop")
+                .accessibilityLabel(cardText.isEmpty ? "Listening for words" : cardText)
+            Text(cardFootnote)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(16)
         .accessibilityElement(children: .contain)
     }
 
-    private var previewAccessibilityLabel: String {
-        state.livePreview.isEmpty ? "Listening for words" : "Live draft: \(state.livePreview)"
+    /// The live draft while speaking; the clean text once it has landed.
+    private var cardText: String {
+        if case .ready = state.phase, let final = state.lastTranscript, !final.isEmpty { return final }
+        return state.livePreview
+    }
+
+    private var cardFootnote: String {
+        switch state.phase {
+        case .transcribing, .polishing:
+            return "Cleaning up the final text…"
+        case .ready:
+            if let message = Self.message(for: state) {
+                return [message.title, message.detail].compactMap { $0 }.joined(separator: " · ")
+            }
+            return "Pasted at your cursor"
+        default:
+            return "Rough draft · clean text pastes when you stop"
+        }
     }
 
     // MARK: network chips
@@ -418,6 +451,39 @@ struct OverlayPill: View {
         default: return false
         }
     }
+}
+
+/// Stops an Overlay recording from the card. The panel never becomes key or
+/// activates Murmur, so the app being dictated into keeps focus and the
+/// paste lands there.
+private struct StopButton: View {
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            (NSApp.delegate as? AppDelegate)?.overlayStopRecording()
+        } label: {
+            HStack(spacing: 5) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .frame(width: 7, height: 7)
+                Text("Stop")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .background(Capsule().fill(Color.primary.opacity(hovering ? 0.16 : 0.1)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("Stop dictation")
+    }
+}
+
+/// Lets the first click on the non-activating panel reach the Stop button
+/// without Murmur being brought forward first.
+final class OverlayHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// SPEC-031 / SPEC-044 network chip — the privacy contract's required

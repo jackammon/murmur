@@ -629,6 +629,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleRecording()
     }
 
+    /// The Overlay card's Stop button. Only stops; never starts a recording.
+    @MainActor
+    func overlayStopRecording() {
+        guard case .recording = appState.phase else { return }
+        toggleRecording()
+    }
+
     @MainActor
     func popoverShowSettings() {
         popover.performClose(nil)

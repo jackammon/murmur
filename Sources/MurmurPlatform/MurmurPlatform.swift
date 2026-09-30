@@ -4,5 +4,5 @@ import Foundation
 /// Carries no UI / KeyboardShortcuts / WhisperKit deps so the bench targets
 /// can build without Xcode-only macro plugins.
 public enum MurmurPlatform {
-    public static let version = "2.0.0-alpha.22"
+    public static let version = "1.0.0"
 }

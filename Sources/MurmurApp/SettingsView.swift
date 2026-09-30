@@ -995,12 +995,12 @@ private struct AboutPane: View {
         }
     }
 
-    /// Single inline row: `v2.0.0-alpha.7 · ✓ Up to date` / `· vX.Y ready`.
+    /// Single inline row: `Version 1 · ✓ Up to date` / `· vX.Y ready`.
     /// Replaces the old status card + button pair — auto-check on appear
     /// keeps it fresh without the user clicking anything.
     private var versionLine: some View {
         HStack(spacing: Theme.s8) {
-            Text("v\(MurmurKit.version)")
+            Text("Version \(VersionText.display(MurmurKit.version))")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
             updateStatusChip
@@ -1051,23 +1051,11 @@ private struct AboutPane: View {
         }
     }
 
-    // MARK: links — Tutorial replays onboarding instead of opening a URL.
+    // MARK: links
 
     private var linksRow: some View {
-        HStack(spacing: Theme.s12) {
-            Link("Source",     destination: URL(string: "https://github.com/jackammon/murmur")!)
-            Text("·").foregroundStyle(.tertiary)
-            Link("Development", destination: URL(string: "https://github.com/jackammon/murmur/blob/main/docs/DEVELOPMENT.md")!)
-            Text("·").foregroundStyle(.tertiary)
-            Link("Issues", destination: URL(string: "https://github.com/jackammon/murmur/issues")!)
-            Text("·").foregroundStyle(.tertiary)
-            Button("Tutorial") {
-                (NSApp.delegate as? AppDelegate)?.replayOnboarding()
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-        }
-        .font(.callout)
+        Link("Source", destination: URL(string: "https://github.com/jackammon/murmur")!)
+            .font(.callout)
     }
 
     // MARK: faq — collapsible rows (whole row is the hit-target, not just the chevron)
@@ -1117,18 +1105,18 @@ private struct AboutPane: View {
             .padding(.horizontal, Theme.s12)
             .background(
                 RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
-                    .fill(Color.white.opacity(0.6))
+                    .fill(Color.primary.opacity(0.05))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                    .stroke(Theme.hairline, lineWidth: 1)
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
-        Text("Open source · MIT licensed · github.com/jackammon")
+        Link("github.com/jackammon", destination: URL(string: "https://github.com/jackammon")!)
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .padding(.top, Theme.s8)

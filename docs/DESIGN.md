@@ -4,7 +4,7 @@ Murmur should feel like part of macOS: system fonts, semantic colours that follo
 
 ## Lean mark
 
-The logo is four pills tilted at 70°, like quick handwriting. At menu-bar size the pills are 2 pt thick on a 16 × 14 pt box. The same geometry draws every size:
+The logo is four pills tilted at 70°, like quick handwriting, on a 16 × 14 pt box. The drawing's stroke is 2 pt; in the menu bar and popover header it is 2.4 pt so the mark holds its own beside system icons. The same geometry draws every size:
 
 | Surface | Drawing |
 | --- | --- |
@@ -27,7 +27,7 @@ The listening HUD and the popover's live wave are an 11 × 7 grid of round dots 
 
 ## HUD
 
-A 34 pt tall pill, borderless with a soft shadow: the dot wave on the left and the recording clock on the right. The clock stays until the HUD closes. Overlay mode uses a 440 × 150 card with the same wave and clock above the live draft. Network chips (SPEC-031, SPEC-044) appear beside the clock when audio or text leaves the Mac.
+Batch and Inline use a 34 pt tall pill, borderless with a soft shadow: the dot wave on the left and the recording clock on the right. The clock stays until the HUD closes. Overlay mode uses only a 440 × 150 card, for the whole dictation: the same wave and clock above the live draft, a Stop button while recording, the clean text once it lands, and the paste animation in its dots. The card is the only HUD surface that takes clicks, and only for Stop; the panel never activates Murmur, so the paste still lands in the app you were using. Network chips (SPEC-031, SPEC-044) appear beside the clock when audio or text leaves the Mac.
 
 Settings → General → Appearance has two choices:
 

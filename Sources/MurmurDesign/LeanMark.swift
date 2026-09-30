@@ -21,8 +21,12 @@ public enum LeanMark {
     /// The mark is drawn on a 16 × 14 pt box: its menu-bar size.
     public static let width: Double = 16
     public static let height: Double = 14
-    /// Pill thickness at menu-bar size.
+    /// Pill thickness of the drawing, relative to the 16 × 14 box. Large
+    /// renders (app icon, About) scale this up with the box.
     public static let thickness: Double = 2
+    /// A heavier stroke for the menu bar and popover header, where the mark
+    /// sits beside system icons at 16 pt and the finer line reads as faint.
+    public static let menuBarThickness: Double = 2.4
     /// Angle of every pill, in degrees from horizontal.
     public static let tilt: Double = 70
 

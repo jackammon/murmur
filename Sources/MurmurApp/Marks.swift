@@ -111,16 +111,18 @@ final class HeightSmoother {
 /// any style; the pills are stroked capsules built into the path.
 struct LeanMarkShape: Shape {
     var pills: [LeanMark.Pill] = LeanMark.pills
+    /// Stroke on the 16 × 14 box; use `LeanMark.menuBarThickness` at 16 pt.
+    var thickness: Double = LeanMark.thickness
 
     func path(in rect: CGRect) -> Path {
         let k = min(rect.width / LeanMark.width, rect.height / LeanMark.height)
         let origin = CGPoint(x: rect.midX - LeanMark.width * k / 2, y: rect.midY - LeanMark.height * k / 2)
         var path = Path()
-        for segment in LeanGeometry.segments(pills) {
+        for segment in LeanGeometry.segments(pills, thickness: thickness) {
             var line = Path()
             line.move(to: CGPoint(x: origin.x + segment.a.x * k, y: origin.y + segment.a.y * k))
             line.addLine(to: CGPoint(x: origin.x + segment.b.x * k, y: origin.y + segment.b.y * k))
-            path.addPath(line.strokedPath(StrokeStyle(lineWidth: LeanMark.thickness * k, lineCap: .round)))
+            path.addPath(line.strokedPath(StrokeStyle(lineWidth: thickness * k, lineCap: .round)))
         }
         return path
     }
@@ -164,8 +166,9 @@ struct MurmurMark: View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
                 .fill(Self.paper)
+                .shadow(color: .black.opacity(0.14), radius: size * 0.05, y: size * 0.025)
             RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5)
+                .strokeBorder(Color.black.opacity(0.14), lineWidth: 1)
             LeanMarkShape()
                 .fill(Self.ink)
                 .frame(width: size * 0.56, height: size * 0.56 * LeanMark.height / LeanMark.width)
@@ -205,11 +208,11 @@ enum StatusGlyph {
         let alpha: CGFloat = kind == .dimmed ? 0.45 : 1
         let image = NSImage(size: size, flipped: true) { _ in
             NSColor.black.withAlphaComponent(alpha).setStroke()
-            for segment in LeanGeometry.segments(pills) {
+            for segment in LeanGeometry.segments(pills, thickness: LeanMark.menuBarThickness) {
                 let path = NSBezierPath()
                 path.move(to: segment.a)
                 path.line(to: segment.b)
-                path.lineWidth = LeanMark.thickness
+                path.lineWidth = LeanMark.menuBarThickness
                 path.lineCapStyle = .round
                 path.stroke()
             }
