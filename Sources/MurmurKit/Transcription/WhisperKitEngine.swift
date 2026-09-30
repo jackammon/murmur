@@ -42,12 +42,7 @@ public final class WhisperKitEngine: TranscriptionEngine {
         let cacheDir = downloadBase ?? Self.defaultDownloadBase()
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-        // One-shot migration: if the user already has WhisperKit weights in
-        // ~/Documents/huggingface/ from before this fix, move them so we
-        // don't re-download. Best-effort — if Documents access has been
-        // revoked, the move silently fails and WhisperKit re-downloads
-        // into the new location.
-        Self.migrateLegacyDocumentsCache(into: cacheDir)
+        Self.cleanupOrphanLegacyTree(in: cacheDir)
 
         // Passing modelFolder + tokenizerFolder when the cache is complete
         // makes upstream skip its mandatory HuggingFace manifest call,
@@ -169,7 +164,7 @@ public final class WhisperKitEngine: TranscriptionEngine {
     ) async throws {
         let cacheDir = downloadBase ?? defaultDownloadBase()
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        migrateLegacyDocumentsCache(into: cacheDir)
+        cleanupOrphanLegacyTree(in: cacheDir)
 
         do {
             _ = try await WhisperKit.download(
@@ -184,35 +179,6 @@ public final class WhisperKitEngine: TranscriptionEngine {
         } catch {
             throw EngineError.loadFailed("download failed: \(error)")
         }
-    }
-
-    /// If `~/Documents/huggingface/models/` exists, move its contents into
-    /// `<newBase>/models/` so HubApi finds the cached weights instead of
-    /// re-downloading. Also folds an orphan `<newBase>/huggingface/` tree
-    /// (left over from an earlier, buggy version of this migration) into
-    /// the canonical `<newBase>/models/` location. Idempotent.
-    private static func migrateLegacyDocumentsCache(into newBase: URL) {
-        let fm = FileManager.default
-        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
-            let legacyModels = docs.appendingPathComponent("huggingface", isDirectory: true)
-                .appendingPathComponent("models", isDirectory: true)
-            if fm.fileExists(atPath: legacyModels.path) {
-                let targetModels = newBase.appendingPathComponent("models", isDirectory: true)
-                try? fm.createDirectory(at: targetModels, withIntermediateDirectories: true)
-                mergeContents(of: legacyModels, into: targetModels)
-
-                // Best-effort: prune the now-empty legacy parent.
-                let legacyParent = docs.appendingPathComponent("huggingface", isDirectory: true)
-                if let entries = try? fm.contentsOfDirectory(atPath: legacyParent.path), entries.isEmpty {
-                    try? fm.removeItem(at: legacyParent)
-                }
-            }
-        }
-
-        // Always run, regardless of whether the Documents-folder migration
-        // had anything to do — caches that already migrated may still have
-        // an orphan `<newBase>/huggingface/` tree from the old code path.
-        cleanupOrphanLegacyTree(in: newBase)
     }
 
     /// An earlier migration mistakenly placed weights at

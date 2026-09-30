@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 import KeyboardShortcuts
 import os
 import ServiceManagement
@@ -23,22 +24,24 @@ struct SettingsView: View {
     @ObservedObject private var speechDownload = (NSApp.delegate as! AppDelegate).speechDownload
 
     var body: some View {
-        TabView(selection: $selection) {
-            GeneralPane(appState: appState)
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(Tab.general)
-            ShortcutPane()
-                .tabItem { Label("Shortcut", systemImage: "command") }
-                .tag(Tab.shortcut)
-            StatsPane(appState: appState)
-                .tabItem { Label("Stats", systemImage: "chart.bar") }
-                .tag(Tab.stats)
-            HistoryPane()
-                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
-                .tag(Tab.history)
-            AboutPane(appState: appState)
-                .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(Tab.about)
+        VStack(spacing: 0) {
+            Picker("Settings pane", selection: $selection) {
+                Text("General").tag(Tab.general)
+                Text("Shortcut").tag(Tab.shortcut)
+                Text("Stats").tag(Tab.stats)
+                Text("History").tag(Tab.history)
+                Text("About").tag(Tab.about)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 340)
+            .padding(.top, Theme.s12)
+            .padding(.bottom, Theme.s12)
+
+            Divider()
+
+            selectedPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 580, idealWidth: 580, minHeight: 500, idealHeight: 500)
         // Download sheets live at the window root, not inside General, so the
@@ -50,6 +53,17 @@ struct SettingsView: View {
         .sheet(isPresented: $polishDownload.isPresented,
                onDismiss: { polishDownload.detachToBackground() }) {
             PolishModelDownloadSheet(model: polishDownload)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedPane: some View {
+        switch selection {
+        case .general: GeneralPane(appState: appState)
+        case .shortcut: ShortcutPane()
+        case .stats: StatsPane(appState: appState)
+        case .history: HistoryPane()
+        case .about: AboutPane(appState: appState)
         }
     }
 }
@@ -111,7 +125,10 @@ private struct GeneralPane: View {
     /// it through `@State` and reconcile in `.onChange`: a not-yet-downloaded
     /// model opens the download sheet and the visual selection snaps back; a
     /// successful download flows the committed `model` back into the Picker.
-    @State private var pickerModel: String = ""
+    @State private var pickerModel: String = UserDefaults.standard.string(forKey: "model") ?? "medium"
+
+    @State private var microphoneAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    @State private var accessibilityPermissionState = PasteService.accessibilityPermissionState()
 
     /// Variants whose weights are on disk — drives the "Downloaded models"
     /// table. Recomputed on appear, when a download settles, and after a delete
@@ -127,6 +144,29 @@ private struct GeneralPane: View {
         if case .downloading(let m, _) = appState.speechDownload { downloading = m }
         downloadedModels = SpeechModelCatalog.all.filter {
             $0 != downloading && WhisperKitEngine.hasModelWeights(for: $0)
+        }
+    }
+
+    private func refreshPermissionStatus() {
+        microphoneAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        accessibilityPermissionState = PasteService.accessibilityPermissionState()
+    }
+
+    private var microphonePermissionLabel: String {
+        switch microphoneAuthorizationStatus {
+        case .authorized: return "Ready"
+        case .notDetermined: return "Not requested"
+        case .denied: return "Off"
+        case .restricted: return "Restricted"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private var accessibilityPermissionLabel: String {
+        switch accessibilityPermissionState {
+        case .notGranted: return "Off"
+        case .requiresRelaunch: return "Restart Murmur to apply"
+        case .ready: return "Ready"
         }
     }
 
@@ -216,6 +256,14 @@ private struct GeneralPane: View {
                 HStack(spacing: Theme.s8) {
                     ProgressView(value: fraction).frame(maxWidth: 160)
                     Text("\(SpeechModelCatalog.displayName(for: variant)) · \(SpeechModelDownloadSheet.percentLabel(fraction))")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if case .warming(let variant) = appState.phase,
+                      WhisperKitEngine.hasModelWeights(for: variant) {
+                HStack(spacing: Theme.s8) {
+                    ProgressView().controlSize(.small)
+                    Text("Preparing \(SpeechModelCatalog.displayName(for: variant)) for first use…")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -327,6 +375,36 @@ private struct GeneralPane: View {
                     .foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Microphone")
+            }
+
+            Section {
+                LabeledContent("Microphone access", value: microphonePermissionLabel)
+                LabeledContent("Auto-paste access", value: accessibilityPermissionLabel)
+                HStack(spacing: Theme.s8) {
+                    Button("Check again") {
+                        refreshPermissionStatus()
+                    }
+                    if microphoneAuthorizationStatus != .authorized {
+                        Button("Microphone Settings") {
+                            NSWorkspace.shared.open(URL(string:
+                                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+                            )!)
+                        }
+                    }
+                    if accessibilityPermissionState == .notGranted {
+                        Button("Accessibility Settings") {
+                            PasteService.requestAccessibilityAccess()
+                            PasteService.openAccessibilitySettings()
+                        }
+                    }
+                }
+                if accessibilityPermissionState == .requiresRelaunch {
+                    Text("macOS has enabled Accessibility, but event posting is not active yet. Quit and reopen Murmur once.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                SectionHeader("Permissions")
             }
 
             Section {
@@ -488,12 +566,16 @@ private struct GeneralPane: View {
         .formStyle(.grouped)
         .padding()
         .onAppear {
+            refreshPermissionStatus()
             // Pick up the session-flag if reconcile flipped the toggle at
             // launch (user revoked us in System Settings while away).
             if let delegate = NSApp.delegate as? AppDelegate,
                delegate.showsLaunchAtLoginApprovalHint {
                 showsApprovalHint = true
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissionStatus()
         }
         .onChange(of: launchAtLogin) { newValue in
             handleLaunchAtLoginChange(newValue)

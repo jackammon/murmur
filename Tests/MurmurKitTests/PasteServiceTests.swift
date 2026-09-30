@@ -3,28 +3,34 @@ import AppKit
 @testable import MurmurKit
 
 final class PasteServiceTests: XCTestCase {
-    func testPermissionStatusUsesPostEventPreflight() {
-        var requested = false
-        let granted = PasteService.postEventAccess(
-            prompt: false,
-            preflight: { true },
-            request: { requested = true; return false }
+    func testAccessibilityPermissionIsReadyWhenEventPostingIsAllowed() {
+        XCTAssertEqual(
+            PasteService.accessibilityPermissionState(
+                accessibilityTrusted: true,
+                eventPostingAllowed: true
+            ),
+            .ready
         )
-
-        XCTAssertTrue(granted)
-        XCTAssertFalse(requested)
     }
 
-    func testPermissionPromptRequestsPostEventAccess() {
-        var preflighted = false
-        let granted = PasteService.postEventAccess(
-            prompt: true,
-            preflight: { preflighted = true; return false },
-            request: { true }
+    func testAccessibilityPermissionRequiresRelaunchWhenOnlyAccessibilityIsTrusted() {
+        XCTAssertEqual(
+            PasteService.accessibilityPermissionState(
+                accessibilityTrusted: true,
+                eventPostingAllowed: false
+            ),
+            .requiresRelaunch
         )
+    }
 
-        XCTAssertTrue(granted)
-        XCTAssertFalse(preflighted)
+    func testAccessibilityPermissionIsNotGrantedWhenNeitherPermissionIsAvailable() {
+        XCTAssertEqual(
+            PasteService.accessibilityPermissionState(
+                accessibilityTrusted: false,
+                eventPostingAllowed: false
+            ),
+            .notGranted
+        )
     }
 
     func testRestoresOnlyWhileAppStillOwnsClipboard() {

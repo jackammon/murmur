@@ -37,9 +37,12 @@ enum OnboardingStep: Int, CaseIterable {
 final class OnboardingState: ObservableObject {
     @Published var step: OnboardingStep = .welcome
     @Published var micStatus: AVAuthorizationStatus = .notDetermined
-    @Published var accessibilityTrusted: Bool = false
+    @Published var accessibilityPermissionState: PasteService.AccessibilityPermissionState = .notGranted
+    @Published var accessibilitySettingsOpened = false
+    @Published var accessibilityError: String? = nil
     @Published var modelProgress: Double = 0      // 0…1, real WhisperKit progress
     @Published var modelDownloaded: Bool = false
+    @Published var modelReady: Bool = false
     @Published var modelError: String? = nil
     @Published var demoTranscript: String = ""
 
@@ -49,17 +52,39 @@ final class OnboardingState: ObservableObject {
     /// hooks this to warm the WhisperKit transcriber in parallel — without
     /// it the demo step has a downloaded model on disk but no in-memory
     /// engine, so the hotkey records audio that nothing can transcribe.
-    var onModelReady: (() -> Void)?
+    private let onModelReady: () -> Void
 
     private let appState: AppState
     let polishDownload: PolishModelDownloadController
     private var cancellables = Set<AnyCancellable>()
     private var permissionTimer: Timer?
     private var modelDownloadTask: Task<Void, Never>?
+    private let modelIdentifier: String
+    private(set) var isRelaunching = false
 
-    init(appState: AppState, polishDownload: PolishModelDownloadController) {
+    var accessibilityTrusted: Bool {
+        accessibilityPermissionState == .ready
+    }
+
+    var shouldOfferAccessibilityRestart: Bool {
+        accessibilityPermissionState == .requiresRelaunch || accessibilitySettingsOpened
+    }
+
+    init(
+        appState: AppState,
+        polishDownload: PolishModelDownloadController,
+        onModelReady: @escaping () -> Void
+    ) {
         self.appState = appState
         self.polishDownload = polishDownload
+        self.onModelReady = onModelReady
+        self.modelIdentifier = UserDefaults.standard.string(forKey: "model") ?? "medium"
+        if let savedStep = OnboardingStep(
+            rawValue: UserDefaults.standard.integer(forKey: "onboardingResumeStep")
+        ), UserDefaults.standard.object(forKey: "onboardingResumeStep") != nil {
+            step = savedStep
+            UserDefaults.standard.removeObject(forKey: "onboardingResumeStep")
+        }
         refreshPermissions()
 
         appState.$lastTranscript
@@ -73,8 +98,30 @@ final class OnboardingState: ObservableObject {
             }
             .store(in: &cancellables)
 
+        appState.$phase
+            .combineLatest(appState.$modelLabel)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] phase, loadedModelIdentifier in
+                guard let self, self.modelDownloaded else { return }
+                if case .idle = phase, loadedModelIdentifier == self.modelIdentifier {
+                    self.modelReady = true
+                    self.modelError = nil
+                } else if case .error(let message) = phase {
+                    self.modelError = message
+                }
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshPermissions() }
+            .store(in: &cancellables)
+
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshPermissions() }
+            Task { @MainActor in
+                guard let self, self.step == .microphone || self.step == .accessibility else { return }
+                self.refreshPermissions()
+            }
         }
 
         startModelDownload()
@@ -86,7 +133,7 @@ final class OnboardingState: ObservableObject {
         let oldMic = micStatus
         let oldAX = accessibilityTrusted
         micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        accessibilityTrusted = PasteService.isAccessibilityTrusted()
+        accessibilityPermissionState = PasteService.accessibilityPermissionState()
 
         // If a permission just flipped to granted while the user is on the
         // matching step, schedule an auto-advance so they don't have to
@@ -121,10 +168,14 @@ final class OnboardingState: ObservableObject {
                 await MainActor.run { self?.refreshPermissions() }
             }
             return true
-        case .accessibility where !accessibilityTrusted:
-            _ = PasteService.isAccessibilityTrusted(prompt: true)
+        case .accessibility where shouldOfferAccessibilityRestart:
+            relaunchAfterAccessibilityGrant()
+            return true
+        case .accessibility where accessibilityPermissionState == .notGranted:
+            accessibilitySettingsOpened = true
+            PasteService.requestAccessibilityAccess()
             PasteService.openAccessibilitySettings()
-            return true  // wait for System Settings → polling auto-advances
+            return true
         default:
             return false
         }
@@ -166,23 +217,60 @@ final class OnboardingState: ObservableObject {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
     }
 
+    func relaunchAfterAccessibilityGrant() {
+        isRelaunching = true
+        UserDefaults.standard.set(OnboardingStep.accessibility.rawValue, forKey: "onboardingResumeStep")
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/bin/sh")
+        helper.arguments = [
+            "-c",
+            "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open \"$2\"",
+            "murmur-relaunch",
+            String(ProcessInfo.processInfo.processIdentifier),
+            Bundle.main.bundlePath
+        ]
+        do {
+            try helper.run()
+            NSApp.terminate(nil)
+        } catch {
+            isRelaunching = false
+            UserDefaults.standard.removeObject(forKey: "onboardingResumeStep")
+            accessibilityError = "Murmur couldn't restart automatically. Quit and reopen it to finish enabling auto-paste."
+        }
+    }
+
     /// Closing the window does not cancel the background transfer. Await it
     /// before AppDelegate starts its own warm/download path, so both callers
     func waitForModelDownload() async {
         await modelDownloadTask?.value
     }
 
+    func retryModelInstall() {
+        modelDownloadTask?.cancel()
+        modelProgress = 0
+        modelDownloaded = false
+        modelReady = false
+        modelError = nil
+        startModelDownload()
+    }
+
     private func startModelDownload() {
-        let model = UserDefaults.standard.string(forKey: "model") ?? "medium"
+        let model = modelIdentifier
         modelDownloadTask = Task { [weak self] in
             do {
                 try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
                     Task { @MainActor in self?.modelProgress = fraction }
                 }
                 await MainActor.run {
-                    self?.modelProgress = 1.0
-                    self?.modelDownloaded = true
-                    self?.onModelReady?()
+                    guard let self else { return }
+                    self.modelProgress = 1.0
+                    self.modelDownloaded = true
+                    if case .idle = self.appState.phase,
+                       self.appState.modelLabel == self.modelIdentifier {
+                        self.modelReady = true
+                    } else {
+                        self.onModelReady()
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -283,8 +371,10 @@ struct OnboardingView: View {
         case .microphone where state.micStatus == .notDetermined:
             return "Allow microphone"
         case .accessibility where !state.accessibilityTrusted:
-            return "Open System Settings"
-        case .install where !state.modelDownloaded:
+            return state.shouldOfferAccessibilityRestart
+                ? "Restart Murmur"
+                : "Open System Settings"
+        case .install where !state.modelReady:
             return "Waiting…"
         case .polish where state.enablePolish:
             return PolishModelCatalog.isInstalled() ? "Enable & continue" : "Download & continue"
@@ -309,7 +399,7 @@ struct OnboardingView: View {
 
     private var continueDisabled: Bool {
         switch state.step {
-        case .install: return !state.modelDownloaded && state.modelError == nil
+        case .install: return !state.modelReady
         default:       return false
         }
     }
@@ -327,11 +417,16 @@ struct OnboardingView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-        } else if state.modelDownloaded {
+        } else if state.modelReady {
             HStack(spacing: Theme.s4) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.success)
                 Text("Ready").font(.caption).foregroundStyle(.secondary)
+            }
+        } else if state.modelDownloaded && state.modelError == nil {
+            HStack(spacing: Theme.s4) {
+                ProgressView().controlSize(.mini)
+                Text("Preparing").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -532,12 +627,35 @@ private struct AccessibilityStep: View {
                 Label("Granted", systemImage: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
                     .foregroundStyle(Theme.success)
+            } else if state.shouldOfferAccessibilityRestart {
+                VStack(spacing: Theme.s12) {
+                    Label("After enabling Murmur, restart it to apply access", systemImage: "arrow.clockwise.circle.fill")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Theme.caution)
+                    Button("Restart Murmur") {
+                        state.relaunchAfterAccessibilityGrant()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             } else {
-                Text("Click Open System Settings, then turn on Murmur. We'll detect the change automatically.")
+                Text("Click Open System Settings, turn on Murmur, then return here. Some macOS versions require one restart before auto-paste works.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
+            }
+            if !state.accessibilityTrusted {
+                Button("Continue without auto-paste") {
+                    state.advance()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            if let accessibilityError = state.accessibilityError {
+                Text(accessibilityError)
+                    .font(.caption)
+                    .foregroundStyle(Theme.caution)
+                    .multilineTextAlignment(.center)
             }
             Spacer()
         }
@@ -549,6 +667,9 @@ private struct AccessibilityStep: View {
     private var bodyCopy: String {
         if state.accessibilityTrusted {
             return "Accessibility access is already granted — moving on."
+        }
+        if state.shouldOfferAccessibilityRestart {
+            return "Turn Murmur on in System Settings, then restart it once so macOS allows it to send the paste shortcut."
         }
         return "Murmur pastes your transcript at the cursor by simulating ⌘V. macOS calls this Accessibility access. You'll grant it once in System Settings — without it, transcripts go to your clipboard and you press ⌘V manually."
     }
@@ -575,10 +696,10 @@ private struct InstallStep: View {
 
     var body: some View {
         VStack(spacing: Theme.s16) {
-            StepGlyph(symbol: state.modelDownloaded ? "checkmark" : "arrow.down.circle")
-                .animation(.easeInOut(duration: 0.25), value: state.modelDownloaded)
+            StepGlyph(symbol: state.modelReady ? "checkmark" : "arrow.down.circle")
+                .animation(.easeInOut(duration: 0.25), value: state.modelReady)
 
-            Text(state.modelDownloaded ? "Speech model ready" : "Installing the speech model")
+            Text(title)
                 .font(.murmurTitle)
 
             Text(detailText)
@@ -590,10 +711,16 @@ private struct InstallStep: View {
             Spacer().frame(height: Theme.s8)
 
             if let err = state.modelError {
-                Label(err, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.caution)
-                    .frame(maxWidth: 380)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: Theme.s12) {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.caution)
+                        .frame(maxWidth: 380)
+                        .multilineTextAlignment(.center)
+                    Button("Try again") {
+                        state.retryModelInstall()
+                    }
+                    .buttonStyle(.bordered)
+                }
             } else if !state.modelDownloaded {
                 VStack(spacing: Theme.s8) {
                     ProgressView(value: state.modelProgress)
@@ -602,6 +729,9 @@ private struct InstallStep: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
+            } else if !state.modelReady {
+                ProgressView()
+                    .controlSize(.small)
             }
 
             Spacer()
@@ -609,10 +739,19 @@ private struct InstallStep: View {
     }
 
     private var detailText: String {
+        if state.modelReady {
+            return "All set — Murmur loaded the speech model and dictation is offline from here."
+        }
         if state.modelDownloaded {
-            return "All set — the speech model is on disk. Dictation is offline from here."
+            return "The download is complete. Murmur is preparing the model for first use; this can take several minutes."
         }
         return "Murmur downloads the selected speech model once. After that, dictation runs offline."
+    }
+
+    private var title: String {
+        if state.modelReady { return "Speech model ready" }
+        if state.modelDownloaded { return "Preparing the speech model" }
+        return "Installing the speech model"
     }
 }
 
@@ -778,8 +917,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     init(appState: AppState, polishDownload: PolishModelDownloadController, onModelReady: @escaping () -> Void, onComplete: @escaping () -> Void) {
-        let state = OnboardingState(appState: appState, polishDownload: polishDownload)
-        state.onModelReady = onModelReady
+        let state = OnboardingState(
+            appState: appState,
+            polishDownload: polishDownload,
+            onModelReady: onModelReady
+        )
         self.state = state
         self.onComplete = onComplete
 
@@ -805,7 +947,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func windowWillClose(_ notification: Notification) {
-        state.complete()
+        if !state.isRelaunching {
+            state.complete()
+        }
         let cb = onComplete
         let state = state
         Self.shared = nil

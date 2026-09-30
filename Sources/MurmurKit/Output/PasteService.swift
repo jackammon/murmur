@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 
 ///
@@ -9,6 +10,12 @@ import Foundation
 /// behaviour (the text is already on the pasteboard at that point, so the
 /// user can ⌘V manually).
 public enum PasteService {
+    public enum AccessibilityPermissionState: Equatable {
+        case notGranted
+        case requiresRelaunch
+        case ready
+    }
+
     struct Snapshot {
         let items: [[NSPasteboard.PasteboardType: Data]]
 
@@ -141,23 +148,35 @@ public enum PasteService {
         expectedChangeCount == actualChangeCount
     }
 
-    /// Whether the process can synthesize keyboard events. `prompt:true`
-    /// requests the same event-post access used by `CGEvent.post`.
     @discardableResult
     public static func isAccessibilityTrusted(prompt: Bool = false) -> Bool {
-        postEventAccess(
-            prompt: prompt,
-            preflight: { CGPreflightPostEventAccess() },
-            request: { CGRequestPostEventAccess() }
+        if prompt {
+            requestAccessibilityAccess()
+        }
+        return accessibilityPermissionState() == .ready
+    }
+
+    public static func accessibilityPermissionState() -> AccessibilityPermissionState {
+        accessibilityPermissionState(
+            accessibilityTrusted: AXIsProcessTrusted(),
+            eventPostingAllowed: CGPreflightPostEventAccess()
         )
     }
 
-    static func postEventAccess(
-        prompt: Bool,
-        preflight: () -> Bool,
-        request: () -> Bool
-    ) -> Bool {
-        prompt ? request() : preflight()
+    static func accessibilityPermissionState(
+        accessibilityTrusted: Bool,
+        eventPostingAllowed: Bool
+    ) -> AccessibilityPermissionState {
+        if eventPostingAllowed {
+            return .ready
+        }
+        return accessibilityTrusted ? .requiresRelaunch : .notGranted
+    }
+
+    @discardableResult
+    public static func requestAccessibilityAccess() -> Bool {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        return AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
     }
 
     /// Open System Settings → Privacy & Security → Accessibility, scrolled to
