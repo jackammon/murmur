@@ -29,8 +29,12 @@ public struct ModelDownloader: ModelDownloading {
         var have = PolishModelCatalog.fileSize(partial) ?? 0
         if have > expectedBytes { try? fm.removeItem(at: partial); have = 0 }
 
-        // Emit the resumed baseline immediately so the UI shows the real %
         onProgress(DownloadProgress(completed: have, total: expectedBytes))
+        if have == expectedBytes {
+            try? fm.removeItem(at: dest)
+            try fm.moveItem(at: partial, to: dest)
+            return
+        }
 
         var req = URLRequest(url: url)
         if have > 0 { req.setValue("bytes=\(have)-", forHTTPHeaderField: "Range") }
@@ -56,7 +60,6 @@ public struct ModelDownloader: ModelDownloading {
 
         let finalSize = PolishModelCatalog.fileSize(partial) ?? -1
         guard finalSize == expectedBytes else {
-            try? fm.removeItem(at: partial)
             throw DownloadError.sizeMismatch(got: finalSize, expected: expectedBytes)
         }
         try? fm.removeItem(at: dest)

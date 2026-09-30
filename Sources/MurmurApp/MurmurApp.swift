@@ -80,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Indicates the recording was stopped by an audio-device change rather than
     /// by the user or voice activity detection. Reset at each new recording.
     private var recordingInterrupted = false
+    private var lastRecordingDiag: DiagnosticsReport.LastRecording?
     private let appState = AppState()
     private let recorder = AudioRecorder()
     private let textInserter: any TextInserter = ClipboardPasteInserter()
@@ -670,7 +671,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard localEngineReady() else { return }
             rightOptionOwnsRecording = true
             rightOptionHoldGeneration += 1
-            appState.recordingMode = .dictation
             appState.phase = .starting
             startRecording(holdGeneration: rightOptionHoldGeneration)
         default:
@@ -700,7 +700,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch appState.phase {
         case .idle, .ready, .error:
             guard localEngineReady() else { return }
-            appState.recordingMode = .dictation
             startRecording()
         case .recording:
             rightOptionOwnsRecording = false
@@ -848,7 +847,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     inlineInsertTask = Task { @MainActor [weak self] in
                         for await chunk in chunks {
                             guard let self else { break }
-                            let phrase = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let phrase = TranscriptSanitizer.sanitize(chunk.text)
                             guard chunk.succeeded, chunk.hasSpeechEnergy, !phrase.isEmpty
                             else { continue }
                             guard await self.textInserter.insertOrdered(phrase + " ") else { break }
@@ -860,7 +859,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     overlayPreviewTask = Task { @MainActor [weak self] in
                         for await preview in previews {
                             guard let self else { break }
-                            self.appState.livePreview = preview
+                            self.appState.livePreview = TranscriptSanitizer.sanitize(preview)
                         }
                     }
                 }
@@ -1104,12 +1103,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     + (recordingInterrupted ? " (interrupted)" : "")
                 )
 
+                let sanitizedTranscript = TranscriptSanitizer.sanitize(result.text)
+                guard !sanitizedTranscript.isEmpty else {
+                    await MainActor.run {
+                        appState.phase = .error("No speech detected. Try again or check your microphone in Settings.")
+                        schedulePolishIdleUnload()
+                    }
+                    return
+                }
 
                 if polishEngineKind != .off {
                     await MainActor.run { appState.phase = .polishing }
                 }
                 let polishStart = Date()
-                let polished = (await polishedTranscript(from: result.text)).text
+                let polished = (await polishedTranscript(from: sanitizedTranscript)).text
                 let polishWall = Date().timeIntervalSince(polishStart)
 
                 // Hold the progress bar at full briefly so the user sees the
@@ -1598,7 +1605,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: defaultLanguage,
                 customWords: customWords
             )
-            let polished = (await polishedTranscript(from: result.text)).text
+            let sanitizedTranscript = TranscriptSanitizer.sanitize(result.text)
+            guard !sanitizedTranscript.isEmpty else {
+                try? await historyStore.markTranscribed(entry.id, transcript: "")
+                return
+            }
+            let polished = (await polishedTranscript(from: sanitizedTranscript)).text
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = textInserter.insert(polished)

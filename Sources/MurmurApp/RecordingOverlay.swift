@@ -365,7 +365,7 @@ struct OverlayPill: View {
     /// transcribing and the paste — and never the compact pill, so only one
     /// HUD shape appears per dictation. Errors still use the error pill.
     static func usesCard(_ state: AppState) -> Bool {
-        guard state.activeDictationMode == .overlay, state.recordingMode == .dictation else { return false }
+        guard state.activeDictationMode == .overlay else { return false }
         switch state.phase {
         case .recording, .transcribing, .polishing, .ready: return true
         default: return false

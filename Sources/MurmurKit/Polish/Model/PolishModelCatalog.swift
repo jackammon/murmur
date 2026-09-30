@@ -2,10 +2,11 @@ import Foundation
 
 /// Single source of truth for the polish model to fetch; the seam for a future multi-model picker.
 public enum PolishModelCatalog {
+    public static let revision = "0314792d7f1f7e229411f620751375812bb9faf2"
     public static let remoteURL = URL(string:
-        "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf")!
+        "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/\(revision)/gemma-4-E2B-it-Q4_K_M.gguf")!
     public static let filename = "gemma-4-E2B-it-Q4_K_M.gguf"
-    public static let expectedBytes: Int64 = 3_106_736_256
+    public static let expectedBytes: Int64 = 3_106_738_272
     public static let licenseURL = URL(string: "https://ai.google.dev/gemma/docs/gemma_4_license")!
     public static let displayName = "Gemma 4 E2B"
     public static let sizeLabel = "~2.9 GB"

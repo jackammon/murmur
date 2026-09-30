@@ -92,6 +92,19 @@ final class ModelDownloaderTests: XCTestCase {
             guard case .sizeMismatch = e else { return XCTFail("wrong error: \(e)") }
         } catch { XCTFail("wrong error: \(error)") }
         XCTAssertFalse(FileManager.default.fileExists(atPath: dest.path))
+        XCTAssertEqual(PolishModelCatalog.fileSize(dest.appendingPathExtension("partial")), 500)
+    }
+
+    func testCompletePartialIsPromotedWithoutNetwork() async throws {
+        StubURLProtocol.body = Data(count: 500)
+        let partial = dest.appendingPathExtension("partial")
+        let completed = Data(repeating: 42, count: 1000)
+        try completed.write(to: partial)
+
+        try await downloader.download(from: url, to: dest, expectedBytes: 1000) { _ in }
+
+        XCTAssertEqual(try Data(contentsOf: dest), completed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
     }
 
     func testResumeFromPartialCompletes() async throws {

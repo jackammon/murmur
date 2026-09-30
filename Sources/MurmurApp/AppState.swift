@@ -16,7 +16,6 @@ public final class AppState: ObservableObject {
     }
 
     @Published public var phase: Phase = .warming(modelLabel: "medium")
-    @Published public var recordingMode: RecordingMode = .dictation
     @Published public var activeDictationMode: DictationMode = .batch
     @Published public var livePreview: String = ""
     @Published public var elapsedSeconds: Double = 0

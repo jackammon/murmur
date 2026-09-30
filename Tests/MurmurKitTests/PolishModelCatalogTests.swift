@@ -27,6 +27,8 @@ final class PolishModelCatalogTests: XCTestCase {
     func testRemoteURLAndFilenameAreConsistent() {
         XCTAssertEqual(PolishModelCatalog.filename, "gemma-4-E2B-it-Q4_K_M.gguf")
         XCTAssertTrue(PolishModelCatalog.remoteURL.absoluteString.hasSuffix(PolishModelCatalog.filename))
+        XCTAssertTrue(PolishModelCatalog.remoteURL.absoluteString.contains("/resolve/\(PolishModelCatalog.revision)/"))
+        XCTAssertFalse(PolishModelCatalog.remoteURL.absoluteString.contains("/resolve/main/"))
         XCTAssertEqual(PolishModelCatalog.localURL.lastPathComponent, PolishModelCatalog.filename)
     }
 
