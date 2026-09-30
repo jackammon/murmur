@@ -4,8 +4,8 @@ import Foundation
 /// Remove wrapper text while retaining the actionable error details.
 public enum DictationFailure {
     private static let prefixes = [
-        "Engine runtime failed: ",
-        "Engine load failed: ",
+        "Engine runtime failed:",
+        "Engine load failed:",
     ]
 
     public static func message(for error: Error) -> String {
@@ -15,6 +15,7 @@ public enum DictationFailure {
         for prefix in prefixes where line.hasPrefix(prefix) {
             line.removeFirst(prefix.count)
         }
+        line = line.trimmingCharacters(in: .whitespaces)
         return line.isEmpty ? "Transcription failed." : line
     }
 
