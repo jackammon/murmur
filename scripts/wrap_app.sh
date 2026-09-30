@@ -24,14 +24,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# KeyboardShortcuts 2.4 needs Swift 6.1. Prefer the side-by-side Xcode 16.4
-# on this macOS 15 build machine without changing global xcode-select. Honor
-# an explicit DEVELOPER_DIR first so other builders can choose their toolchain.
 if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode_16.4.app/Contents/Developer ]]; then
     export DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer
     echo "→ Using Xcode toolchain at $DEVELOPER_DIR"
 elif [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p)" == *CommandLineTools* && -d /Applications/Xcode.app ]]; then
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+    echo "→ Using Xcode toolchain at $DEVELOPER_DIR"
+elif [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p)" == *CommandLineTools* && -d /Applications/Xcode_16.2.app ]]; then
+    export DEVELOPER_DIR=/Applications/Xcode_16.2.app/Contents/Developer
     echo "→ Using Xcode toolchain at $DEVELOPER_DIR"
 fi
 
@@ -40,19 +40,23 @@ BIN_NAME="murmur"
 VERSION="$(grep -E 'public static let version' Sources/MurmurPlatform/MurmurPlatform.swift | sed -E 's/.*"([^"]+)".*/\1/')"
 
 IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
-pick() {
-    # Pull the quoted identity name matching the prefix from `security find-identity`.
-    grep -oE "\"$1[^\"]*\"" <<<"$IDENTITIES" | head -1 | tr -d '"'
+pick_identity_hash() {
+    awk -v prefix="\"$1" 'index($0, prefix) { print $2; exit }' <<<"$IDENTITIES"
 }
 
 IDENTITY=""
 if [[ -n "${MURMUR_SIGN_IDENTITY:-}" ]]; then
-    IDENTITY="$MURMUR_SIGN_IDENTITY"
-    if ! grep -Fq "\"$IDENTITY\"" <<<"$IDENTITIES"; then
-        echo "error: no valid code-signing identity named \"$IDENTITY\" is available in the keychain." >&2
+    if [[ "$MURMUR_SIGN_IDENTITY" =~ ^[[:xdigit:]]{40}$ ]] && \
+       grep -Fq "$MURMUR_SIGN_IDENTITY" <<<"$IDENTITIES"; then
+        IDENTITY="$MURMUR_SIGN_IDENTITY"
+    else
+        IDENTITY="$(pick_identity_hash "$MURMUR_SIGN_IDENTITY")"
+    fi
+    if [[ -z "$IDENTITY" ]]; then
+        echo "error: no valid code-signing identity named \"$MURMUR_SIGN_IDENTITY\" is available in the keychain." >&2
         echo "Create or import a signing certificate with its private key, then verify it with:" >&2
         echo "  security find-identity -v -p codesigning" >&2
-        echo "For a local self-signed certificate, use Keychain Access → Certificate Assistant → Create a Certificate with Key; name it \"$IDENTITY\", choose Self-Signed Root and Code Signing, and confirm it appears under My Certificates with its private key." >&2
+        echo "For a local self-signed certificate, use Keychain Access → Certificate Assistant → Create a Certificate with Key; name it \"$MURMUR_SIGN_IDENTITY\", choose Self-Signed Root and Code Signing, and confirm it appears under My Certificates with its private key." >&2
         if grep -qE '^[[:space:]]*[1-9][0-9]* valid identities found' <<<"$IDENTITIES"; then
             echo "Available identities:" >&2
             sed -nE 's/^[[:space:]]*[0-9]+\) //p' <<<"$IDENTITIES" >&2
@@ -61,12 +65,17 @@ if [[ -n "${MURMUR_SIGN_IDENTITY:-}" ]]; then
         fi
         exit 1
     fi
-elif [[ -n "$(pick 'Developer ID Application: ')" ]]; then
-    IDENTITY="$(pick 'Developer ID Application: ')"
-elif [[ -n "$(pick 'Apple Development: ')" ]]; then
-    IDENTITY="$(pick 'Apple Development: ')"
-elif [[ -n "$(pick 'Murmur Dev')" ]]; then
-    IDENTITY="Murmur Dev"
+elif [[ -n "$(pick_identity_hash 'Developer ID Application: ')" ]]; then
+    IDENTITY="$(pick_identity_hash 'Developer ID Application: ')"
+elif [[ -n "$(pick_identity_hash 'Apple Development: ')" ]]; then
+    IDENTITY="$(pick_identity_hash 'Apple Development: ')"
+elif [[ -n "$(pick_identity_hash 'Murmur Dev')" ]]; then
+    IDENTITY="$(pick_identity_hash 'Murmur Dev')"
+fi
+
+IDENTITY_NAME=""
+if [[ -n "$IDENTITY" ]]; then
+    IDENTITY_NAME="$(grep -F "$IDENTITY" <<<"$IDENTITIES" | sed -nE 's/.*"([^"]+)".*/\1/p')"
 fi
 
 echo "→ Building release..."
@@ -146,7 +155,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key>    <string>$VERSION</string>
     <key>CFBundlePackageType</key>           <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key> <string>6.0</string>
-    <key>LSMinimumSystemVersion</key>        <string>13.0</string>
+    <key>LSMinimumSystemVersion</key>        <string>14.0</string>
     <key>LSUIElement</key>                   <true/>
     <key>NSPrincipalClass</key>              <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>       <true/>
@@ -159,9 +168,9 @@ PLIST
 ENTITLEMENTS="$ROOT/scripts/murmur.entitlements"
 
 if [[ -n "$IDENTITY" ]]; then
-    if [[ "$IDENTITY" == "Developer ID"* ]]; then
+    if [[ "$IDENTITY_NAME" == "Developer ID"* ]]; then
         # Distribution cert: hardened runtime + Apple TSA timestamp (required for notarization).
-        echo "→ Signing for distribution: $IDENTITY"
+        echo "→ Signing for distribution: $IDENTITY_NAME ($IDENTITY)"
         codesign --force --deep --sign "$IDENTITY" \
             --options runtime --timestamp \
             --entitlements "$ENTITLEMENTS" \
@@ -169,8 +178,10 @@ if [[ -n "$IDENTITY" ]]; then
     else
         # Dev cert (Apple Development / self-signed): stable DR for TCC across
         # rebuilds; no hardened runtime needed (we're not notarizing).
-        echo "→ Signing for dev iteration: $IDENTITY"
-        codesign --force --deep --sign "$IDENTITY" --timestamp=none "$BUNDLE"
+        echo "→ Signing for dev iteration: $IDENTITY_NAME ($IDENTITY)"
+        codesign --force --deep --sign "$IDENTITY" --timestamp=none \
+            --entitlements "$ENTITLEMENTS" \
+            "$BUNDLE"
     fi
     DR_LINE="$(codesign -dr - "$BUNDLE" 2>&1 | sed -n 's/^designated => //p')"
     [[ -n "$DR_LINE" ]] && echo "  DR: $DR_LINE"

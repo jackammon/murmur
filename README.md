@@ -16,48 +16,68 @@ Transcription and transcript handling always run on this Mac; audio and transcri
 
 ## Install
 
-The easiest free option is to build Murmur on your own Mac. You need macOS 15 or newer and Xcode 16.4 or newer. From Terminal:
+Murmur runs on macOS 14 or newer. Building requires Xcode 16.3 or newer with Swift 6.1+. Xcode 16.3 requires macOS Sequoia 15.2 or newer to run; the app's deployment target remains macOS 14.
+
+Before the first build, set up a stable local signing identity. This prevents macOS from treating every rebuild as a different app and discarding its Microphone and Accessibility grants:
+
+1. Open Xcode → Settings → Accounts and add your Apple ID.
+2. Select the account, choose Manage Certificates, and create an Apple Development certificate.
+3. Verify that `security find-identity -v -p codesigning` lists it.
+
+Then install from Terminal:
 
 ```sh
 git clone https://github.com/jackammon/murmur.git
 cd murmur
-bash scripts/package_dmg.sh
+bash scripts/install.sh
 ```
 
-The script builds Murmur and signs it locally with an ad-hoc signature; no paid Apple developer account is needed. It creates `build/Murmur-<version>.dmg`. Open the image and drag Murmur to Applications, then launch it. Allow Microphone access for recording and Accessibility access for automatic paste in System Settings → Privacy & Security. The first launch downloads the selected speech model; it stays on your Mac and transcription runs offline.
+The installer builds and signs Murmur, replaces `~/Applications/Murmur.app`, verifies the signature, and launches it. A free Apple ID is sufficient for a local Apple Development certificate; a paid Developer Program membership is only needed to distribute a notarized build to other Macs.
 
-To install from Terminal instead of dragging in Finder, copy the app built by the script into your user Applications folder and launch it:
+If no signing identity is available, the installer stops before building and explains how to add one. For a one-off build where permission resets are acceptable, explicitly allow ad-hoc signing:
 
 ```sh
-mkdir -p "$HOME/Applications"
-ditto build/Murmur.app "$HOME/Applications/Murmur.app"
-open "$HOME/Applications/Murmur.app"
+MURMUR_ALLOW_ADHOC=1 bash scripts/install.sh
 ```
 
-An agent can run these build and install commands on your Mac if it has Terminal access. macOS still requires you to approve Microphone and Accessibility access yourself.
+On first launch, Murmur guides you through Microphone and Accessibility access. On macOS versions where Accessibility becomes enabled before synthetic paste events become active, Murmur shows a Restart button and resumes onboarding after relaunch. You can also continue without automatic paste; transcripts remain on the clipboard.
 
-Ad-hoc signatures are meant for local builds. If you share a DMG built on your Mac, Gatekeeper may block it on someone else's Mac. A drag-to-install download needs a Developer ID signature and Apple notarization. Until I can cover Apple's $99 Developer Program fee, you'll need to build Murmur locally using the steps above. If you'd like to contribute toward the fee, I can make a ready-to-install download.
+The speech model has two first-run stages: Downloading saves the model weights, then Preparing loads the tokenizer and compiles the model for the Mac. Murmur reports it as ready only after both stages finish. The files live under `~/Library/Application Support/Murmur`; Murmur does not probe or migrate a cache in Documents.
 
-If macOS says the locally built app cannot be opened, Control-click Murmur in Applications, choose **Open**, then confirm **Open**. This exception is for a build you compiled yourself from this repository; don’t use it to approve an app from an unknown source.
+To build a DMG instead, run `bash scripts/package_dmg.sh`. Sharing it with another Mac still requires Developer ID signing and Apple notarization.
+
+### Clean uninstall
+
+Remove only the app:
+
+```sh
+bash scripts/uninstall.sh
+```
+
+For a fresh-install test, remove the app plus downloaded models, history, settings, caches, and permission grants:
+
+```sh
+bash scripts/uninstall.sh --all-data
+```
 
 ## Development
 
-The app has been built on macOS 15 with Xcode 16.4. `scripts/wrap_app.sh` creates a locally signed app bundle; `scripts/package_dmg.sh` packages it for installation on the Mac that built it.
+The app is tested on macOS 14 and newer with Swift 6.1+. `scripts/wrap_app.sh` creates a signed app bundle, `scripts/install.sh` installs it locally, and `scripts/package_dmg.sh` packages it as a disk image.
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer swift test
+swift test
 bash scripts/wrap_app.sh
 open build/Murmur.app
 ```
 
 ## Troubleshooting
 
-If recording does not start, check Microphone permission in System Settings. If text does not appear at the cursor, check Accessibility permission and try pasting manually. After rebuilding an ad-hoc signed app, macOS may ask for these permissions again.
+If recording does not start, check the Permissions section in Murmur Settings and System Settings → Privacy & Security → Microphone. If text does not appear at the cursor, check Accessibility in the same section. When Murmur says a restart is required, use the onboarding Restart button or quit and reopen the app once.
 
-If Accessibility is enabled but Murmur still reports auto-paste as off, repeated ad-hoc builds may have left a grant for an older build. For more stable local permissions across rebuilds, create a self-signed code-signing certificate named `Murmur Dev` in Keychain Access (Certificate Assistant → Create a Certificate; choose **Self-Signed Root** and **Code Signing**), then package with:
+If permissions reset after every rebuild, check the signature requirement:
 
 ```sh
-MURMUR_SIGN_IDENTITY="Murmur Dev" bash scripts/package_dmg.sh
+codesign -dr - "$HOME/Applications/Murmur.app"
 ```
 
-Remove the old Murmur entry from Accessibility, install the newly signed app, and grant that copy. This self-signed certificate is only for local development; it does not replace Developer ID signing or notarization for distributing a prebuilt app.
+An output containing only `cdhash` is an ad-hoc signature. Run the normal installer after adding an Apple Development certificate. A self-signed Code Signing certificate named `Murmur Dev` is also supported for local use, but it does not replace Developer ID signing or notarization for distribution.

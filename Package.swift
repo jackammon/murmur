@@ -4,8 +4,7 @@ import PackageDescription
 let package = Package(
     name: "Murmur",
     platforms: [
-        // 13 is WhisperKit's minimum; the GUI app will set its own (likely 15) when added.
-        .macOS(.v13),
+        .macOS(.v14),
     ],
     products: [
         .library(
@@ -32,7 +31,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "0.18.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts.git", from: "2.4.0"),
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts.git", exact: "2.3.0"),
         // Kept off MurmurKit (kit stays Sparkle-free); linked only into
         // MurmurApp. `from: "2.6.0"` floats up through 2.x; do not pin a
         // branch.
