@@ -1,0 +1,34 @@
+# Swift / Xcode
+.build/
+build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Claude Code agent worktrees + run state
+.claude/
+
+# Model caches (downloaded by WhisperKit)
+mlx_models/
+.cache/
+
+# Zed editor (local per-developer LSP/index config)
+.zed/
+
+# graphify knowledge-graph output (rebuilt locally via post-commit hook)
+graphify-out/
