@@ -65,7 +65,7 @@ let package = Package(
             dependencies: [],
             path: "Sources/MurmurPlatform"
         ),
-        // Stripe-field geometry, palette, and dither math shared by the app's
+        // Lean mark geometry and round-stipple dot rules shared by the app's
         // menu-bar glyph, overlay, and brand mark. Foundation only.
         .target(
             name: "MurmurDesign",

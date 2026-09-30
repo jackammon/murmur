@@ -60,6 +60,8 @@ private struct GeneralPane: View {
     @ObservedObject var appState: AppState
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("dictationMode")        private var dictationMode: String = DictationMode.batch.rawValue
+    @AppStorage(HUDStyle.defaultsKey)   private var hudStyle: HUDStyle = .dark
+    @AppStorage(PasteAnimation.defaultsKey) private var pasteAnimation: PasteAnimation = .default
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
     @AppStorage("polishSystemPrompt")  private var polishSystemPrompt: String = PolishPrompt.defaultInstructions
@@ -642,8 +644,13 @@ private struct GeneralPane: View {
             }
 
             Section {
-                StripeStylePicker()
-                Text("Colours the listening overlay and the popover's live wave.")
+                Picker("Listening HUD", selection: $hudStyle) {
+                    ForEach(HUDStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Picker("When text is pasted", selection: $pasteAnimation) {
+                    ForEach(PasteAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Text("The HUD is the small pill that appears while you dictate. After a paste it plays a short animation, then closes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -796,48 +803,6 @@ private struct GeneralPane: View {
 }
 
 // MARK: - Shortcut
-
-/// Three preview tiles for the stripe style, each showing the still mark in
-/// that style (static, so Settings doesn't redraw continuously).
-private struct StripeStylePicker: View {
-    @AppStorage(StripeStyle.defaultsKey) private var style: StripeStyle = .color
-
-    var body: some View {
-        HStack(spacing: Theme.s12) {
-            ForEach(StripeStyle.allCases, id: \.self) { option in
-                Button {
-                    style = option
-                } label: {
-                    VStack(spacing: 6) {
-                        StripeWave(motion: .resting, ink: option.usesPalette ? .palette : .foreground,
-                                   animated: false)
-                            .frame(width: 58, height: 26)
-                            .foregroundStyle(option.hasDarkSurface ? Color.white : Color.black)
-                            .frame(width: 96, height: 48)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(option.hasDarkSurface ? Color(white: 0.1) : Color(white: 0.96))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(style == option ? Color.accentColor : Theme.hairline,
-                                                  lineWidth: style == option ? 2 : 1)
-                            )
-                        Text(option.title)
-                            .font(.caption)
-                            .foregroundStyle(style == option ? .primary : .secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(option.title)
-                .accessibilityAddTraits(style == option ? .isSelected : [])
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-    }
-}
 
 private struct ShortcutPane: View {
     @AppStorage(HotkeyManager.rightOptionDefaultsKey) private var rightOptionHoldToTalk = false

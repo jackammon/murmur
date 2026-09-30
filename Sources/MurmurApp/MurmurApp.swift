@@ -502,7 +502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         // Phase-driven glyph is set in `updateIcon`; seed with the resting
         // mark so the status item renders on first paint.
-        statusItem.button?.image = StatusGlyph.image(for: .resting)
+        statusItem.button?.image = StatusGlyph.image(.rest)
         statusItem.button?.imagePosition = .imageOnly
         statusItem.button?.toolTip = "Murmur"
         statusItem.button?.setAccessibilityLabel("Murmur")
@@ -710,15 +710,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func statusGlyph(for phase: AppState.Phase, levels: [Float], hasUpdate: Bool) -> NSImage {
         switch phase {
         case .warming:
-            return StatusGlyph.image(for: .resting, dimmed: true, badge: hasUpdate)
+            return StatusGlyph.image(.dimmed, badge: hasUpdate)
         case .idle, .ready:
-            return StatusGlyph.image(for: .resting, badge: hasUpdate)
+            return StatusGlyph.image(.rest, badge: hasUpdate)
         case .starting, .recording:
-            return StatusGlyph.image(for: .live(levels), badge: hasUpdate)
+            return StatusGlyph.image(.listening(levels), badge: hasUpdate)
         case .transcribing, .polishing:
-            return StatusGlyph.image(for: .quiet, badge: hasUpdate)
+            return StatusGlyph.image(.dimmed, badge: hasUpdate)
         case .error:
-            return StatusGlyph.image(for: .alert, badge: hasUpdate)
+            return StatusGlyph.image(.alert, badge: hasUpdate)
         }
     }
 

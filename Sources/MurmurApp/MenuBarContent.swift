@@ -6,16 +6,17 @@ import MurmurDesign
 /// Popover that appears on left-click of the menu-bar icon.
 ///
 /// Laid out like the system's own menu-bar extras: a compact header with the
-/// stripe mark, status, and shortcut; the dictation button and mode picker;
+/// Lean mark, status, and shortcut; the dictation button and mode picker;
 /// notices only when something needs attention; the last transcript; and
-/// menu-style rows for Settings and Quit. While dictating, a live stripe
-/// wave appears under the header, inked per the Settings stripe style.
+/// menu-style rows for Settings and Quit. While dictating, a live
+/// round-stipple wave appears under the header.
 struct MenuBarContent: View {
     @ObservedObject var state: AppState
     @AppStorage("dictationMode") private var dictationMode: String = DictationMode.batch.rawValue
-    @AppStorage(StripeStyle.defaultsKey) private var stripeStyle: StripeStyle = .color
 
     private static let inset: CGFloat = 14
+    /// The popover's live wave spans its width: 29 columns of the HUD's dots.
+    private static let waveGrid = DotGrid(columns: 29, rows: 7)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -70,9 +71,10 @@ struct MenuBarContent: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            StripeWave(motion: .resting, ink: .foreground, metrics: .compact, animated: false)
-                .frame(width: 20, height: 16)
-                .foregroundStyle(.primary)
+            LeanMarkShape()
+                .fill(.primary)
+                .frame(width: 16, height: 14)
+                .accessibilityHidden(true)
                 .opacity(isWarming ? 0.45 : 1)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Murmur")
@@ -101,22 +103,22 @@ struct MenuBarContent: View {
         return false
     }
 
-    /// Live stripes while listening; a travelling wave while transcribing,
-    /// with columns lighting up as progress arrives.
+    /// Live round-stipple dots while listening; a travelling swell while
+    /// transcribing or polishing.
     @ViewBuilder
     private var activityWave: some View {
-        let ink: StripeInk = stripeStyle.usesPalette ? .palette : .foreground
         switch state.phase {
         case .starting, .recording:
-            StripeWave(motion: .live(state.levelHistory), ink: ink)
-                .frame(height: 28)
+            DotWave(motion: .live(state.levelHistory), grid: Self.waveGrid, dotSize: 2)
+                .foregroundStyle(.primary)
+                .frame(height: 22)
                 .padding(.horizontal, Self.inset)
                 .padding(.bottom, Theme.s12)
                 .accessibilityHidden(true)
         case .transcribing, .polishing:
-            StripeWave(motion: .working, ink: ink,
-                       progress: state.phase == .transcribing ? state.transcriptionProgress : nil)
-                .frame(height: 28)
+            DotWave(motion: .working, grid: Self.waveGrid, dotSize: 2)
+                .foregroundStyle(.secondary)
+                .frame(height: 22)
                 .padding(.horizontal, Self.inset)
                 .padding(.bottom, Theme.s12)
                 .accessibilityHidden(true)

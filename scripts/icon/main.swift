@@ -1,8 +1,8 @@
-// Generates build/AppIcon.icns: the stripe-field brand mark in the dithered
-// palette on a near-black rounded square.
+// Generates build/AppIcon.icns: the Lean mark — four tilted pills — in warm
+// ink on a flat Paper rounded square.
 //
-// Compiled together with the MurmurDesign sources so the icon uses the exact
-// geometry and colours the app draws (see `StripeMark`). `wrap_app.sh` runs:
+// Compiled together with the MurmurDesign sources so the icon uses exactly
+// the geometry the menu bar draws (see `LeanMark`). `wrap_app.sh` runs:
 //
 //   swiftc -O scripts/icon/main.swift Sources/MurmurDesign/*.swift -o build/make_icon
 //   build/make_icon
@@ -18,9 +18,9 @@ let icnsURL    = buildDir.appendingPathComponent("AppIcon.icns")
 try? FileManager.default.removeItem(at: iconsetDir)
 try FileManager.default.createDirectory(at: iconsetDir, withIntermediateDirectories: true)
 
-// Tile gradient, top to bottom.
-let tileTop    = NSColor(srgbRed: 0.125, green: 0.125, blue: 0.137, alpha: 1)  // #202023
-let tileBottom = NSColor(srgbRed: 0.063, green: 0.063, blue: 0.075, alpha: 1)  // #101013
+// Flat Paper tile and warm near-black ink. No gradient.
+let paper = NSColor(srgbRed: 0.969, green: 0.961, blue: 0.945, alpha: 1)  // #F7F5F1
+let ink   = NSColor(srgbRed: 0.090, green: 0.078, blue: 0.059, alpha: 1)  // #17140F
 
 // macOS icon template: the visible rounded square is ~824 px on a 1024
 // canvas, leaving ~100 px transparent margin per side so the icon lines up
@@ -48,32 +48,35 @@ func renderIcon(side: Int) -> NSBitmapImageRep {
     let radius = inner * 0.225
 
     let tilePath = NSBezierPath(roundedRect: tile, xRadius: radius, yRadius: radius)
-    NSGradient(starting: tileTop, ending: tileBottom)!.draw(in: tilePath, angle: -90)
+    paper.setFill()
+    tilePath.fill()
 
-    // Faint rim so the tile holds its edge on dark Docks.
-    NSColor.white.withAlphaComponent(0.06).setStroke()
-    let rimInset = max(0.5, inner * 0.004)
+    // Hairline rim so the light tile holds its edge on light Docks.
+    NSColor.black.withAlphaComponent(0.1).setStroke()
+    let rimInset = max(0.5, inner * 0.003)
     let rim = NSBezierPath(roundedRect: tile.insetBy(dx: rimInset, dy: rimInset),
                            xRadius: radius - rimInset, yRadius: radius - rimInset)
-    rim.lineWidth = max(1, inner * 0.006)
+    rim.lineWidth = max(0.5, inner * 0.004)
     rim.stroke()
 
-    // The mark, centred. Cells come top-left-origin; AppKit is bottom-left.
-    let scale = StripeMark.scale(forTileSide: Double(inner))
-    let markW = (Double(inner) * scale.width).rounded()
-    let markH = (Double(inner) * scale.height).rounded()
-    let snap = side <= 64
-    var originX = Double(tile.midX) - markW / 2
-    var originTop = Double(s - tile.midY) - markH / 2
-    if snap { originX.round(); originTop.round() }
-
-    context.shouldAntialias = !snap
-    for cell in StripeMark.cells(width: markW, height: markH, snap: snap) {
-        NSColor(srgbRed: cell.color.red, green: cell.color.green, blue: cell.color.blue, alpha: 1).setFill()
-        let top = originTop + cell.y
-        NSRect(x: originX + cell.x,
-               y: Double(s) - top - cell.height,
-               width: cell.width, height: cell.height).fill()
+    // The mark, centred: the menu-bar geometry scaled up, drawn larger at
+    // small sizes so the pills survive. Pills come y-down; AppKit is y-up.
+    let share = side <= 32 ? 0.66 : 0.56
+    let k = Double(inner) * share / LeanMark.width
+    let originX = Double(tile.midX) - LeanMark.width * k / 2
+    let originTop = Double(s - tile.midY) - LeanMark.height * k / 2
+    let thickness = max(side <= 16 ? 1.5 : 1, LeanMark.thickness * k)
+    let angle = LeanMark.tilt * .pi / 180
+    ink.setStroke()
+    for pill in LeanMark.pills {
+        let half = max(0, pill.length - LeanMark.thickness) / 2 * k
+        let cx = originX + pill.centreX * k, cy = originTop + pill.centreY * k
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: cx - cos(angle) * half, y: Double(s) - (cy - sin(angle) * half)))
+        path.line(to: NSPoint(x: cx + cos(angle) * half, y: Double(s) - (cy + sin(angle) * half)))
+        path.lineWidth = thickness
+        path.lineCapStyle = .round
+        path.stroke()
     }
     return rep
 }
@@ -100,7 +103,7 @@ let layouts: [(side: Int, name: String)] = [
     (1024, "icon_512x512@2x.png"),
 ]
 
-print("→ Rendering \(layouts.count) sizes of the stripe mark...")
+print("→ Rendering \(layouts.count) sizes of the Lean mark...")
 for layout in layouts {
     try writePNG(renderIcon(side: layout.side), name: layout.name)
 }

@@ -1,29 +1,42 @@
 # Murmur visual design
 
-Murmur should feel like part of macOS: system fonts, semantic colours that follow light and dark appearance, and native controls. One element carries the brand: the **stripe field**.
+Murmur should feel like part of macOS: system fonts, semantic colours that follow light and dark appearance, and native controls. Two monochrome marks carry the brand. There is no brand colour.
 
-## Stripe field
+## Lean mark
 
-Every mark is a grid of short vertical segments. Columns stand for slices of sound. Each column has small breaks, which give the stripes their texture. The same field draws:
+The logo is four pills tilted at 70°, like quick handwriting. At menu-bar size the pills are 2 pt thick on a 16 × 14 pt box. The same geometry draws every size:
 
-| Surface | Motion | Ink |
-| --- | --- | --- |
-| Menu-bar icon (template, 20×16 pt) | Resting mark; live levels while recording; quiet line while transcribing; `!` on error; dimmed while the model loads | Menu-bar text colour |
-| Popover header | Resting mark | Label colour |
-| Popover live wave | Live levels while recording; travelling wave while transcribing | Stripe style |
-| Listening HUD | Same as the live wave, plus quiet line when pasted and `!` on failure | Stripe style |
-| About, onboarding, app icon | Resting mark on a dark tile | Palette |
+| Surface | Drawing |
+| --- | --- |
+| Menu-bar icon (template image) | At rest: the mark. While listening: each pill's length follows the microphone. Loading and transcribing: dimmed. Error: a tilted exclamation mark in the same pills. Update ready: a small dot at the top right. |
+| Popover header | The mark in the label colour |
+| About, onboarding | The mark on a Paper tile, like the app icon |
+| App icon | The mark scaled up exactly, warm ink `#17140F` on flat Paper `#F7F5F1`, no gradient |
 
-The geometry, palette, and dither rules live in `Sources/MurmurDesign` (Foundation only, unit tested). `Sources/MurmurApp/Stripes.swift` renders them with SwiftUI `Canvas` and AppKit. `scripts/icon/main.swift` compiles with the same sources to build `AppIcon.icns`.
+## Round-stipple dot wave
 
-- **Live levels**: the newest level sits in the centre column and older levels ripple outward, so speech reads as a symmetric pulse.
-- **Breaks**: the resting mark has one authored break per column. Live fields break more often near the tips, and the pattern changes six times a second. The menu-bar glyph never flickers, and Reduce Motion stops all animation.
-- **Palette**: colours are sampled from the reference stills and grouped into five scenes: sunrise, lagoon, dusk, blush, and ember. A field shows one scene as a left-to-right gradient with a 4×4 ordered dither between neighbouring colours. It holds each scene for 3.5 s, then dissolves cell by cell into the next over 1.5 s. Still marks use the first scene.
+The listening HUD and the popover's live wave are an 11 × 7 grid of round dots (the popover uses 29 columns to span its width). Only lit dots are drawn.
 
-## Stripe style
+- **Listening**: the newest level lights the centre column and older levels ripple out to both edges. Heights glide between audio updates rather than stepping.
+- **Transcribing and polishing**: a slow swell travels through the grid.
+- **Pasted**: a paste animation plays inside the grid, then the whole HUD fades together (surface, dots and clock). The animation lasts 1 s; the fade starts at 0.72 s.
+  - **Fill and dissolve** (default): the grid floods with dots from the centre, holds, then the dots wink out in a scattered order.
+  - **Star**: the dots gather to the centre, a four-pointed star shoots out to the grid's edges, and its arms run off the ends.
+- **Words appear only when there is something to read**: "Copied to clipboard" when paste was not possible, an interruption notice, or an error with an exclamation mark in the dots.
+- **Reduce Motion** stops all animation; after a paste the HUD simply fades.
 
-Settings → General → Appearance offers **Color**, **White on black**, and **Black on white** (`murmur.stripeStyle`). It sets the HUD surface and ink and the popover's live wave. The popover itself follows the system appearance; in the two monochrome styles its wave uses the label colour.
+## HUD
 
-## Tokens
+A 34 pt tall pill, borderless with a soft shadow: the dot wave on the left and the recording clock on the right. The clock stays until the HUD closes. Overlay mode uses a 440 × 150 card with the same wave and clock above the live draft. Network chips (SPEC-031, SPEC-044) appear beside the clock when audio or text leaves the Mac.
 
-`Theme.swift` holds spacing, radii, system status colours (`success`, `caution`, `alert`), type roles, and a monochrome button style. Prefer native controls (`.borderedProminent`, `.bordered`, segmented pickers) in new UI.
+Settings → General → Appearance has two choices:
+
+- **Listening HUD**: Dark (default), Light, or Match system (`murmur.hudStyle`).
+- **When text is pasted**: Fill and dissolve (default) or Star (`murmur.pasteAnimation`).
+
+## Code
+
+- `Sources/MurmurDesign` (Foundation only, unit tested): `LeanMark` geometry, `DotGrid` rules, `PasteAnimation` frames, `HUDStyle`, `ElapsedTime`.
+- `Sources/MurmurApp/Marks.swift`: SwiftUI and AppKit renderers (`DotWave`, `LeanMarkShape`, `MurmurMark`, `StatusGlyph`).
+- `scripts/icon/main.swift`: compiled with `Sources/MurmurDesign` by `scripts/wrap_app.sh` to build `AppIcon.icns`.
+- `Theme.swift`: spacing, radii, system status colours (`success`, `caution`, `alert`), type roles, and a monochrome button style. Prefer native controls in new UI.

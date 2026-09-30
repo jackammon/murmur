@@ -5,8 +5,9 @@ import AppKit
 ///
 /// Murmur follows the system: system fonts, semantic colours that adapt to
 /// light and dark appearances, and native controls where they exist. Brand
-/// character lives in one place, the stripe field (`Stripes.swift`), which
-/// draws the menu-bar glyph, the listening HUD, and the brand mark.
+/// character lives in two marks (`Marks.swift`): the Lean logo (menu bar,
+/// popover header, About, app icon) and the round-stipple dot wave
+/// (listening HUD, popover live wave).
 
 enum Theme {
     // MARK: - Status colours (system colours adapt to appearance and contrast)
@@ -138,7 +139,7 @@ extension View {
 // MARK: - Buttons
 
 /// Design-system button, three variants. Monochrome so it sits with the
-/// stripe mark, and adaptive so it reads in light and dark mode.
+/// Lean mark, and adaptive so it reads in light and dark mode.
 ///
 /// - `.neutral`     — quiet tinted fill. Default ask, like "Export".
 /// - `.primary`     — solid label-colour fill (black in light mode, white in

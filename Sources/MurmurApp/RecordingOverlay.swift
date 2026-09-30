@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 import Combine
 import MurmurKit
@@ -16,6 +17,7 @@ final class RecordingOverlay {
     private var hostingView: NSHostingView<OverlayPill>?
     private var cancellable: AnyCancellable?
     private let state: AppState
+    private let model = OverlayModel()
 
     init(state: AppState) {
         self.state = state
@@ -28,43 +30,68 @@ final class RecordingOverlay {
 
     /// Long enough to read an instruction like "sign in again in Settings".
     private static let errorLinger: TimeInterval = 6
+    /// Long enough to read "Copied to clipboard" or an interruption notice.
+    private static let messageLinger: TimeInterval = 1.6
 
     private func handle(phase: AppState.Phase) {
         switch phase {
         case .recording, .transcribing, .polishing:
+            model.paste = nil
             ensurePanel()
-            resizePanel(for: phase)
+            resizePanel()
             showAnimated()
         case .ready:
-            // Linger briefly so the user sees the "Pasted" / "Copied" state.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
-                if case .ready = self?.state.phase {
-                    self?.hideAnimated()
-                }
+            guard panel?.isVisible == true else { return }
+            if OverlayPill.readyShowsMessage(state) {
+                // Something to read: show it, then close.
+                resizePanel()
+                hide(after: Self.messageLinger, duration: 0.25)
+            } else {
+                // Pasted: play the paste animation inside the pill, then the
+                // whole HUD — surface, dots and clock together — fades out.
+                let animation = PasteAnimation(
+                    rawValue: UserDefaults.standard.string(forKey: PasteAnimation.defaultsKey) ?? ""
+                ) ?? .default
+                model.paste = OverlayModel.Paste(
+                    animation: animation, start: Date(),
+                    heights: DotGrid.hud.workingHeights(time: Date().timeIntervalSinceReferenceDate)
+                )
+                resizePanel()
+                let fadeAt = PasteAnimation.duration * PasteAnimation.fadeStart
+                hide(after: fadeAt, duration: PasteAnimation.duration - fadeAt)
             }
         case .error:
             // A failure must never look like a dictation that simply vanished:
             // show what went wrong, and hold long enough to read a sentence.
+            model.paste = nil
             ensurePanel()
-            resizePanel(for: phase)
+            resizePanel()
             showAnimated()
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.errorLinger) { [weak self] in
                 if case .error = self?.state.phase {
-                    self?.hideAnimated()
+                    self?.hideAnimated(duration: 0.25)
                 }
             }
         case .idle, .warming, .starting:
-            hideAnimated()
+            hideAnimated(duration: 0.25)
+        }
+    }
+
+    /// Hide after `delay` unless a new dictation has started meanwhile.
+    private func hide(after delay: TimeInterval, duration: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            if case .ready = self?.state.phase {
+                self?.hideAnimated(duration: duration)
+            }
         }
     }
 
     private func ensurePanel() {
         if panel != nil { return }
 
-        let pill = OverlayPill(state: state)
+        let pill = OverlayPill(state: state, model: model)
         let host = NSHostingView(rootView: pill)
-        host.frame = NSRect(origin: .zero, size: OverlayPill.size(for: state.phase,
-                                                                mode: state.activeDictationMode))
+        host.frame = NSRect(origin: .zero, size: OverlayPill.size(for: state, pasting: model.paste != nil))
 
         let panel = NSPanel(
             contentRect: host.frame,
@@ -87,13 +114,12 @@ final class RecordingOverlay {
         self.hostingView = host
     }
 
-    /// The panel is created at one size; the Overlay card and error pill are
-    /// bigger, so match the window to the SwiftUI frame before showing it or
-    /// the content clips. Keeps the top edge and horizontal centre in place so
-    /// the HUD doesn't drift when, say, the Overlay card becomes a capsule.
-    private func resizePanel(for phase: AppState.Phase) {
+    /// Match the window to the SwiftUI frame for the current state. Keeps the
+    /// top edge and horizontal centre in place so the HUD doesn't drift when,
+    /// say, the Overlay card becomes the compact pill.
+    private func resizePanel() {
         guard let panel else { return }
-        let size = OverlayPill.size(for: phase, mode: state.activeDictationMode)
+        let size = OverlayPill.size(for: state, pasting: model.paste != nil)
         guard panel.frame.size != size else { return }
         let old = panel.frame
         panel.setFrame(NSRect(x: (old.midX - size.width / 2).rounded(),
@@ -127,78 +153,230 @@ final class RecordingOverlay {
         }
     }
 
-    private func hideAnimated() {
+    private func hideAnimated(duration: TimeInterval) {
         guard let panel, panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.25
+            ctx.duration = duration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 0
-        }, completionHandler: { [weak panel] in
+        }, completionHandler: { [weak self, weak panel] in
+            // A new dictation may have started during the fade.
+            guard let self, !self.isShowingPhase else { return }
             panel?.orderOut(nil)
+            self.model.paste = nil
         })
     }
+
+    private var isShowingPhase: Bool {
+        switch state.phase {
+        case .recording, .transcribing, .polishing, .error: return true
+        default: return false
+        }
+    }
+}
+
+/// Overlay-only presentation state the controller shares with the view.
+@MainActor
+final class OverlayModel: ObservableObject {
+    struct Paste: Equatable {
+        let animation: PasteAnimation
+        let start: Date
+        let heights: [Double]
+    }
+
+    /// Set while the paste animation plays.
+    @Published var paste: Paste?
 }
 
 // MARK: - SwiftUI pill
 
 /// The listening HUD.
 ///
-/// Batch and Inline get a compact capsule: stripe wave, one or two lines of
-/// status, and the recording clock. Overlay mode gets a card with the live
-/// transcript under the same header. The surface and ink follow the
-/// Settings stripe style — colour or white stripes on a dark HUD, or black
-/// stripes on a light one — independent of the system appearance, like the
-/// system's own HUDs.
+/// Batch and Inline get a compact pill: the round-stipple wave and the
+/// recording clock, nothing else. The clock stays until the pill closes.
+/// Transcribing keeps the pill and swaps the wave for a slow swell. A paste
+/// plays a short animation in the dots; then the whole pill fades. Overlay
+/// mode gets a card with the live transcript under the same wave and clock.
+/// Words appear only when there is something to read: "Copied to
+/// clipboard", an interruption notice, an error. The surface follows the
+/// Settings HUD style, independent of the system appearance by default, like
+/// the system's own HUDs.
 struct OverlayPill: View {
     @ObservedObject var state: AppState
-    @AppStorage(StripeStyle.defaultsKey) private var style: StripeStyle = .color
+    @ObservedObject var model: OverlayModel
+    @AppStorage(HUDStyle.defaultsKey) private var style: HUDStyle = .dark
+    @Environment(\.colorScheme) private var systemScheme
 
     var body: some View {
-        let size = Self.size(for: state.phase, mode: state.activeDictationMode)
-        let shape = RoundedRectangle(cornerRadius: cornerRadius(for: size), style: .continuous)
+        let size = Self.size(for: state, pasting: model.paste != nil)
+        let shape = RoundedRectangle(cornerRadius: size.height <= 40 ? size.height / 2 : Theme.rFloating,
+                                     style: .continuous)
+        let dark = style.isDark(systemIsDark: systemScheme == .dark)
         Group {
             if isOverlayRecording {
                 transcriptPreview
+            } else if let message = Self.message(for: state) {
+                messagePill(message)
             } else {
-                statusPill
+                compactPill
             }
         }
         .frame(width: size.width, height: size.height)
         .background {
             ZStack {
                 VisualEffect(material: .hudWindow, blending: .behindWindow,
-                             appearance: style.hasDarkSurface ? .darkAqua : .aqua)
-                (style.hasDarkSurface ? Color.black.opacity(0.55) : Color.white.opacity(0.55))
+                             appearance: dark ? .darkAqua : .aqua)
+                (dark ? Color.black.opacity(0.55) : Color.white.opacity(0.6))
             }
         }
         .clipShape(shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
-        .environment(\.colorScheme, style.hasDarkSurface ? .dark : .light)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+        .environment(\.colorScheme, dark ? .dark : .light)
     }
 
-    /// Capsule for the one-line phases; a softer card for bigger panels.
-    private func cornerRadius(for size: CGSize) -> CGFloat {
-        size.height <= 52 ? size.height / 2 : Theme.rFloating
+    // MARK: sizes
+
+    static let compactHeight: CGFloat = 34
+
+    /// The panel size for the current state.
+    static func size(for state: AppState, pasting: Bool) -> CGSize {
+        if case .recording = state.phase, state.activeDictationMode == .overlay {
+            return CGSize(width: 440, height: 150)
+        }
+        if case .error = state.phase { return CGSize(width: 360, height: 72) }
+        if !pasting, message(for: state) != nil { return CGSize(width: 300, height: compactHeight) }
+        let chips = (showsKickoffChip(state) ? 64 : 0) + (showsRemoteChip(state) ? 70 : 0)
+        return CGSize(width: 112 + CGFloat(chips), height: compactHeight)
     }
+
+    /// Whether `.ready` has words to show instead of the paste animation.
+    static func readyShowsMessage(_ state: AppState) -> Bool {
+        guard case .ready = state.phase else { return false }
+        return message(for: state) != nil
+    }
+
+    // MARK: compact pill
+
+    private var compactPill: some View {
+        HStack(spacing: 10) {
+            DotWave(motion: waveMotion)
+                .frame(width: 44, height: 18)
+            Spacer(minLength: 0)
+            // Both chips can coexist: a kickoff recording with a remote
+            // backend uploads audio *and* routes the transcript to claude —
+            // each network hop gets disclosed.
+            if Self.showsKickoffChip(state) { NetworkChip(label: "claude") }
+            if Self.showsRemoteChip(state) { NetworkChip(label: "remote") }
+            clock
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityStatus)
+    }
+
+    private var waveMotion: DotWaveMotion {
+        if let paste = model.paste {
+            return .paste(paste.animation, start: paste.start, heights: paste.heights)
+        }
+        switch state.phase {
+        case .recording, .starting: return .live(state.levelHistory)
+        case .transcribing, .polishing: return .working
+        case .error: return .alert
+        default: return .quiet
+        }
+    }
+
+    private var clock: some View {
+        Text(ElapsedTime.format(state.elapsedSeconds))
+            .font(.system(size: 11, weight: .medium).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 26, alignment: .trailing)
+    }
+
+    private var accessibilityStatus: String {
+        let time = ElapsedTime.spoken(state.elapsedSeconds)
+        switch state.phase {
+        case .recording: return "Listening, \(time)"
+        case .transcribing:
+            // SPEC-044 — never claim local processing while audio goes remote.
+            return state.remoteHost.map { "Transcribing via \($0)" } ?? "Transcribing on your Mac"
+        case .polishing: return "Polishing"
+        case .ready: return state.lastPasted ? "Pasted" : "Done"
+        default: return "Murmur"
+        }
+    }
+
+    // MARK: message pill
+
+    struct Message {
+        let title: String
+        let detail: String?
+    }
+
+    /// Words to show, or nil when the dots say it all.
+    static func message(for state: AppState) -> Message? {
+        switch state.phase {
+        case .ready:
+            // SPEC-036 — an interruption notice always gets read.
+            if let notice = state.lastNotice {
+                return Message(title: state.lastPasted ? "Pasted" : "Copied to clipboard", detail: notice)
+            }
+            if state.recordingMode == .agentKickoff {
+                if state.lastKickoffSucceeded { return Message(title: "Launched claude", detail: nil) }
+                return Message(title: "Kickoff failed",
+                               detail: state.lastKickoffError ?? "Transcript copied to clipboard")
+            }
+            if state.lastPasted { return nil }
+            return Message(title: "Copied to clipboard", detail: "Press ⌘V to paste")
+        case .error(let message):
+            return Message(title: "Dictation failed", detail: message)
+        default:
+            return nil
+        }
+    }
+
+    private func messagePill(_ message: Message) -> some View {
+        var isError = false
+        if case .error = state.phase { isError = true }
+        return HStack(spacing: 12) {
+            DotWave(motion: isError ? .alert : .quiet)
+                .frame(width: 44, height: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(message.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                if let detail = message.detail {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(isError ? 2 : 1)
+                        .fixedSize(horizontal: false, vertical: isError)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: overlay-mode card
 
     private var isOverlayRecording: Bool {
         guard case .recording = state.phase else { return false }
         return state.activeDictationMode == .overlay
     }
 
-    private var ink: StripeInk { style.usesPalette ? .palette : .foreground }
-
-    // MARK: overlay-mode card
-
     /// Overlay mode needs a readable transcript surface rather than the
-    /// one-line status pill used by Batch and Inline.
+    /// compact pill used by Batch and Inline.
     private var transcriptPreview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                StripeWave(motion: .live(state.levelHistory), ink: ink)
-                    .frame(width: 46, height: 20)
-                Text("Listening")
-                    .font(.murmurHeadline)
+                DotWave(motion: .live(state.levelHistory))
+                    .frame(width: 44, height: 18)
                 Spacer()
+                if Self.showsKickoffChip(state) { NetworkChip(label: "claude") }
+                if Self.showsRemoteChip(state) { NetworkChip(label: "remote") }
                 clock
             }
             Text(state.livePreview.isEmpty
@@ -221,144 +399,23 @@ struct OverlayPill: View {
         state.livePreview.isEmpty ? "Listening for words" : "Live draft: \(state.livePreview)"
     }
 
-    // MARK: status capsule
+    // MARK: network chips
 
-    private var statusPill: some View {
-        HStack(spacing: 10) {
-            indicator
-                .frame(width: 56, height: 28)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(headline)
-                    .font(.murmurHeadline)
-                    .lineLimit(1)
-                if let subline = plainSubline {
-                    Text(subline)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(isError ? 2 : 1)
-                        .fixedSize(horizontal: false, vertical: isError)
-                }
-            }
-            Spacer(minLength: 0)
-            // Both chips can coexist: a kickoff recording with a remote
-            // backend uploads audio *and* routes the transcript to claude —
-            // each network hop gets disclosed.
-            if state.recordingMode == .agentKickoff,
-               case .recording = state.phase {
-                NetworkChip(label: "claude")
-            }
-            if showsRemoteChip {
-                NetworkChip(label: "remote")
-            }
-            if case .recording = state.phase {
-                clock
-            }
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 16)
-        .accessibilityElement(children: .combine)
+    /// SPEC-031 — kickoff recordings disclose that the transcript goes to claude.
+    static func showsKickoffChip(_ state: AppState) -> Bool {
+        guard state.recordingMode == .agentKickoff else { return false }
+        if case .recording = state.phase { return true }
+        return false
     }
-
-    private var clock: some View {
-        Text(ElapsedTime.format(state.elapsedSeconds))
-            .font(.system(size: 12).monospacedDigit())
-            .foregroundStyle(.secondary)
-            .accessibilityLabel(ElapsedTime.spoken(state.elapsedSeconds))
-    }
-
-    /// The stripe field carries the state: live while listening, a travelling
-    /// wave that fills with colour as transcription progresses, a quiet line
-    /// when done, and an exclamation mark on failure.
-    @ViewBuilder
-    private var indicator: some View {
-        switch state.phase {
-        case .recording, .starting:
-            StripeWave(motion: .live(state.levelHistory), ink: ink)
-        case .transcribing:
-            StripeWave(motion: .working, ink: ink, progress: state.transcriptionProgress)
-        case .polishing:
-            StripeWave(motion: .working, ink: ink)
-        case .ready:
-            if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
-                StripeWave(motion: .alert, ink: alertInk, animated: false)
-            } else {
-                StripeWave(motion: .quiet, ink: ink, animated: false)
-            }
-        case .error:
-            StripeWave(motion: .alert, ink: alertInk, animated: false)
-        default:
-            StripeWave(motion: .resting, ink: ink, animated: false)
-        }
-    }
-
-    private var alertInk: StripeInk { style.usesPalette ? .solid(Theme.alert) : .foreground }
 
     /// SPEC-044 — the privacy contract's network indicator for remote
     /// transcription: visible the whole time audio destined for the wire is
     /// being captured or sent.
-    private var showsRemoteChip: Bool {
+    static func showsRemoteChip(_ state: AppState) -> Bool {
         guard state.remoteHost != nil else { return false }
         switch state.phase {
         case .recording, .transcribing: return true
         default: return false
-        }
-    }
-
-    private var isError: Bool {
-        if case .error = state.phase { return true }
-        return false
-    }
-
-    /// Errors need a bigger pill than the one-line phases.
-    static func size(for phase: AppState.Phase, mode: DictationMode) -> CGSize {
-        if case .recording = phase, mode == .overlay {
-            return CGSize(width: 440, height: 150)
-        }
-        if case .error = phase { return CGSize(width: 360, height: 72) }
-        return CGSize(width: 272, height: 48)
-    }
-
-    private var headline: String {
-        switch state.phase {
-        case .recording:
-            return state.recordingMode == .agentKickoff ? "Listening (kickoff)" : "Listening"
-        case .transcribing: return "Transcribing"
-        case .polishing:    return "Polishing"
-        case .ready:
-            if state.recordingMode == .agentKickoff {
-                return state.lastKickoffSucceeded ? "Launched claude" : "Kickoff failed"
-            }
-            return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard"
-        case .error:        return "Dictation failed"
-        default:            return "Murmur"
-        }
-    }
-
-    private var plainSubline: String? {
-        switch state.phase {
-        case .recording:
-            if state.activeDictationMode == .overlay, !state.livePreview.isEmpty {
-                return String(state.livePreview.suffix(52))
-            }
-            return nil
-        case .transcribing:
-            // SPEC-044 — never claim "On your Mac" when audio is being sent
-            // to a configured remote endpoint.
-            if let host = state.remoteHost { return "via \(host)" }
-            return "On your Mac"
-        case .polishing:
-            return "On your Mac"
-        case .ready:
-            // SPEC-036 — surface an interruption notice over the usual subline.
-            if let notice = state.lastNotice { return notice }
-            if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
-                return state.lastKickoffError ?? "Transcript copied to clipboard"
-            }
-            return state.lastTranscript.map { String($0.prefix(48)) }
-        case .error(let message):
-            return message
-        default:
-            return nil
         }
     }
 }
