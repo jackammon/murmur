@@ -207,18 +207,21 @@ final class OverlayModel: ObservableObject {
 /// Words appear only when there is something to read: "Copied to
 /// clipboard", an interruption notice, an error. The surface follows the
 /// Settings HUD style, independent of the system appearance by default, like
-/// the system's own HUDs.
+/// the system's own HUDs — or the Colour theme, when one is chosen.
 struct OverlayPill: View {
     @ObservedObject var state: AppState
     @ObservedObject var model: OverlayModel
     @AppStorage(HUDStyle.defaultsKey) private var style: HUDStyle = .dark
+    @AppStorage(ColourTheme.defaultsKey) private var colourTheme: ColourTheme = .off
     @Environment(\.colorScheme) private var systemScheme
 
     var body: some View {
         let size = Self.size(for: state, pasting: model.paste != nil)
         let shape = RoundedRectangle(cornerRadius: size.height <= 40 ? size.height / 2 : Theme.rFloating,
                                      style: .continuous)
-        let dark = style.isDark(systemIsDark: systemScheme == .dark)
+        let field = colourTheme.field
+        // A colour theme sets its own ink; otherwise the HUD style decides.
+        let dark = field.map(\.lightInk) ?? style.isDark(systemIsDark: systemScheme == .dark)
         Group {
             if Self.usesCard(state) {
                 transcriptPreview
@@ -228,12 +231,18 @@ struct OverlayPill: View {
                 compactPill
             }
         }
+        .shadow(color: .black.opacity(field?.halo == true ? 0.35 : 0), radius: 1)
         .frame(width: size.width, height: size.height)
         .background {
-            ZStack {
-                VisualEffect(material: .hudWindow, blending: .behindWindow,
-                             appearance: dark ? .darkAqua : .aqua)
-                (dark ? Color.black.opacity(0.55) : Color.white.opacity(0.6))
+            if let field {
+                // The colour drifts only while you speak.
+                ColourSurface(field: field, shape: shape, moving: state.phase == .recording)
+            } else {
+                ZStack {
+                    VisualEffect(material: .hudWindow, blending: .behindWindow,
+                                 appearance: dark ? .darkAqua : .aqua)
+                    (dark ? Color.black.opacity(0.55) : Color.white.opacity(0.6))
+                }
             }
         }
         .clipShape(shape)

@@ -155,14 +155,26 @@ enum LeanGeometry {
 }
 
 /// The brand mark for About and onboarding: the Lean mark on a Paper tile,
-/// matching the app icon.
+/// matching the app icon, or on the chosen colour theme's tile.
 struct MurmurMark: View {
     var size: CGFloat
+    @AppStorage(ColourTheme.defaultsKey) private var colourTheme: ColourTheme = .off
 
     static let paper = Color(red: 0.969, green: 0.961, blue: 0.945)  // #F7F5F1
     static let ink = Color(red: 0.090, green: 0.078, blue: 0.059)    // #17140F
 
     var body: some View {
+        if let field = colourTheme.field {
+            ThemedIconTile(field: field, size: size)
+                .shadow(color: .black.opacity(0.14), radius: size * 0.05, y: size * 0.025)
+                .accessibilityElement()
+                .accessibilityLabel("Murmur")
+        } else {
+            paperTile
+        }
+    }
+
+    private var paperTile: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
                 .fill(Self.paper)

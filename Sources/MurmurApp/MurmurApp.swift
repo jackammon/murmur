@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         observeLevelsForIcon()
+        observeColourThemeForDockIcon()
         overlay = RecordingOverlay(state: appState)
 
         // SPEC-007 — wire the download controller to AppState (so progress
@@ -698,6 +699,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let label = Self.statusLabel(for: phase, hasUpdate: hasUpdate)
         button.toolTip = label
         button.setAccessibilityLabel(label)
+    }
+
+    /// The Dock icon follows the Colour setting while Murmur runs; Off
+    /// restores the bundle's Paper icon.
+    private func observeColourThemeForDockIcon() {
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in DockIcon.current }
+            .prepend(DockIcon.current)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { theme in
+                Task { @MainActor in DockIcon.apply(theme) }
+            }
+            .store(in: &cancellables)
     }
 
     /// While recording, the menu-bar glyph follows the microphone level.

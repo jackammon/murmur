@@ -62,6 +62,7 @@ private struct GeneralPane: View {
     @AppStorage("dictationMode")        private var dictationMode: String = DictationMode.batch.rawValue
     @AppStorage(HUDStyle.defaultsKey)   private var hudStyle: HUDStyle = .dark
     @AppStorage(PasteAnimation.defaultsKey) private var pasteAnimation: PasteAnimation = .default
+    @AppStorage(ColourTheme.defaultsKey) private var colourTheme: ColourTheme = .off
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
     @AppStorage("polishSystemPrompt")  private var polishSystemPrompt: String = PolishPrompt.defaultInstructions
@@ -650,7 +651,18 @@ private struct GeneralPane: View {
                 Picker("When text is pasted", selection: $pasteAnimation) {
                     ForEach(PasteAnimation.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-                Text("The HUD is the small pill that appears while you dictate. After a paste it plays a short animation, then closes.")
+                Picker("Colour", selection: $colourTheme) {
+                    Text("Off").tag(ColourTheme.off)
+                    ForEach(ColourTheme.groups, id: \.title) { group in
+                        Section(group.title) {
+                            ForEach(group.themes, id: \.self) { Text($0.title).tag($0) }
+                        }
+                    }
+                }
+                if let field = colourTheme.field {
+                    ColourThemePreview(field: field)
+                }
+                Text("The HUD is the small pill that appears while you dictate. After a paste it plays a short animation, then closes. Colour adds the GIF palette behind the HUD and the About mark, and to the Dock icon while Murmur runs; the menu bar stays monochrome.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -803,6 +815,33 @@ private struct GeneralPane: View {
 }
 
 // MARK: - Shortcut
+
+/// The chosen colour theme on a sample HUD and on the app icon.
+private struct ColourThemePreview: View {
+    let field: ColourField
+
+    var body: some View {
+        HStack(spacing: Theme.s16) {
+            HStack {
+                DotWave(motion: .quiet)
+                    .frame(width: 44, height: 18)
+                Spacer(minLength: 0)
+                Text("0:07")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 14)
+            .frame(width: 112, height: 34)
+            .background(ColourSurface(field: field, shape: Capsule()))
+            .environment(\.colorScheme, field.lightInk ? .dark : .light)
+            ThemedIconTile(field: field, size: 40)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .accessibilityHidden(true)
+    }
+}
 
 private struct ShortcutPane: View {
     @AppStorage(HotkeyManager.rightOptionDefaultsKey) private var rightOptionHoldToTalk = false

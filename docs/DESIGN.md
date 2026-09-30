@@ -34,9 +34,16 @@ Settings → General → Appearance has two choices:
 - **Listening HUD**: Dark (default), Light, or Match system (`murmur.hudStyle`).
 - **When text is pasted**: Fill and dissolve (default) or Star (`murmur.pasteAnimation`).
 
+## Colour (optional)
+
+Settings → General → Appearance → **Colour** adds the reference GIF's palette on top of the monochrome design (`murmur.colourTheme`, Off by default). It colours the listening HUD and Overlay card, the About and onboarding mark, and the Dock icon while Murmur runs (Finder keeps the Paper icon from the bundle). The menu bar stays monochrome.
+
+There are 18 themes in five groups: **Field** (Sunrise, Lagoon, Dusk, Ember, Every still), **Wash** (Blush wash, Dawn, Lagoon wash), **Horizon** (Sunrise horizon, Dusk horizon, Blush horizon, Ember slant), **Duotone** (Citrus, Tide), and **Rim and grain** (Sunrise rim, Dusk rim, Big pixel, Fine grain). Every theme keeps colour in large areas, dithered (Bayer 4 × 4) only where two colours meet, with a dark or pale scrim, dark ink, or a soft halo under light dots so the HUD stays readable. The colour drifts only while you speak. Every still moves through all five palettes, dissolving from one to the next every 6 s.
+
 ## Code
 
-- `Sources/MurmurDesign` (Foundation only, unit tested): `LeanMark` geometry, `DotGrid` rules, `PasteAnimation` frames, `HUDStyle`, `ElapsedTime`.
+- `Sources/MurmurDesign` (Foundation only, unit tested): `LeanMark` geometry, `DotGrid` rules, `PasteAnimation` frames, `HUDStyle`, `ColourTheme` fields, `ElapsedTime`.
+- `Sources/MurmurApp/ColourSurface.swift`: the colour field renderer, themed icon tile, and Dock icon swap.
 - `Sources/MurmurApp/Marks.swift`: SwiftUI and AppKit renderers (`DotWave`, `LeanMarkShape`, `MurmurMark`, `StatusGlyph`).
 - `scripts/icon/main.swift`: compiled with `Sources/MurmurDesign` by `scripts/wrap_app.sh` to build `AppIcon.icns`.
 - `Theme.swift`: spacing, radii, system status colours (`success`, `caution`, `alert`), type roles, and a monochrome button style. Prefer native controls in new UI.
