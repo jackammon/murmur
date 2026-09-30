@@ -78,7 +78,7 @@ struct DotWave: View {
             let time = reduceMotion ? 0 : date.timeIntervalSinceReferenceDate
             return grid.lit(heights: grid.workingHeights(time: time))
         case .quiet:
-            return grid.lit(heights: [])
+            return grid.quietLine
         case .alert:
             return grid.alert
         case .paste(let animation, let start, let heights):
@@ -197,13 +197,12 @@ enum StatusGlyph {
     static func image(_ kind: Kind, badge: Bool = false) -> NSImage {
         let size = NSSize(width: LeanMark.width + (badge ? badgeWidth : 0), height: LeanMark.height)
         let pills: [LeanMark.Pill]
-        var alpha: CGFloat = 1
         switch kind {
-        case .rest: pills = LeanMark.pills
+        case .rest, .dimmed: pills = LeanMark.pills
         case .listening(let levels): pills = LeanMark.pills(levels: levels)
-        case .dimmed: pills = LeanMark.pills; alpha = 0.45
         case .alert: pills = LeanGeometry.alert
         }
+        let alpha: CGFloat = kind == .dimmed ? 0.45 : 1
         let image = NSImage(size: size, flipped: true) { _ in
             NSColor.black.withAlphaComponent(alpha).setStroke()
             for segment in LeanGeometry.segments(pills) {

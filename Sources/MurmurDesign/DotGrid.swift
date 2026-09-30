@@ -100,6 +100,11 @@ public struct DotGrid: Equatable, Sendable {
         return dots
     }
 
+    /// A single dotted line along the centre row.
+    public var quietLine: Set<Dot> {
+        Set((0..<columns).map { Dot(column: $0, row: centreRow) })
+    }
+
     /// An exclamation mark in the centre column, for errors.
     public var alert: Set<Dot> {
         let stroke = 0..<max(1, rows - 3)

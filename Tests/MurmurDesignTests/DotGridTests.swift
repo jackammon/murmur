@@ -39,6 +39,11 @@ final class DotGridTests: XCTestCase {
         XCTAssertTrue(dots.allSatisfy { $0.row == 3 })
     }
 
+    func testQuietLineIsTheCentreRow() {
+        XCTAssertEqual(grid.quietLine.count, 11)
+        XCTAssertTrue(grid.quietLine.allSatisfy { $0.row == 3 })
+    }
+
     func testWorkingHeightsStayInRange() {
         for t in stride(from: 0.0, to: 5, by: 0.13) {
             for h in grid.workingHeights(time: t) {
